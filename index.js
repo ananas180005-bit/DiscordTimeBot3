@@ -38,11 +38,23 @@ const ABSENCE_WARN_ROLES = [
   "1550995666036330607"
 ];
 
-// رولات مستثناة من نظام التاسكات والـWarn
+// الرولات المستثناة من التاسكات و Task Warn
 const EXCLUDED_TASK_ROLES = [
   "1546134518463856760",
   "1546140695314571304"
 ];
+
+// رولات الغرامات حسب المبلغ
+const FINE_ROLES = {
+  3000: "1556929755691876403",
+  2500: "1556929805818003516",
+  2000: "1556930071833346057",
+  1500: "1556929974852780053",
+  1000: "1556929931500326912"
+};
+
+// مدة سداد الغرامة = 48 ساعة
+const FINE_DURATION = 48 * 60 * 60 * 1000;
 
 // =====================================================
 // ملف البيانات
@@ -63,7 +75,10 @@ function loadData() {
 }
 
 function saveData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync(
+    DATA_FILE,
+    JSON.stringify(data, null, 2)
+  );
 }
 
 // =====================================================
@@ -91,6 +106,16 @@ function daysBetween(date1, date2) {
 }
 
 // =====================================================
+// التأكد إن العضو مش مستثنى
+// =====================================================
+
+function isExcluded(member) {
+  return member.roles.cache.some(role =>
+    EXCLUDED_TASK_ROLES.includes(role.id)
+  );
+}
+
+// =====================================================
 // إنشاء بيانات عضو
 // =====================================================
 
@@ -107,7 +132,6 @@ function ensurePlayer(data, user) {
 
       taskWarns: 0,
       absenceWarns: 0,
-
       totalWarns: 0,
 
       fines: [],
@@ -115,13 +139,25 @@ function ensurePlayer(data, user) {
 
       vacations: [],
 
-      lastAbsenceCheck: null
+      lastAbsenceCheck: null,
+      lastReset: null
     };
   }
 
-  data[user.id].name = user.username;
+  // دعم البيانات القديمة
+  const player = data[user.id];
 
-  return data[user.id];
+  player.name = user.username;
+  player.attendance ||= [];
+  player.tasks ||= [];
+  player.fines ||= [];
+  player.vacations ||= [];
+  player.taskWarns ||= 0;
+  player.absenceWarns ||= 0;
+  player.totalWarns ||= 0;
+  player.points ||= 0;
+
+  return player;
 }
 
 // =====================================================
@@ -138,8 +174,14 @@ function isAdmin(interaction) {
 // إضافة Warn
 // =====================================================
 
-async function addWarn(guild, userId, type, reason) {
-  const data = loadData();
+async function addWarn(
+  guild,
+  userId,
+  type,
+  reason,
+  mainData = null
+) {
+  const data = mainData || loadData();
 
   if (!data[userId]) {
     data[userId] = {
@@ -154,11 +196,35 @@ async function addWarn(guild, userId, type, reason) {
       fines: [],
       points: 0,
       vacations: [],
-      lastAbsenceCheck: null
+      lastAbsenceCheck: null,
+      lastReset: null
     };
   }
 
   const player = data[userId];
+
+  // ===================================================
+  // التأكد من الرولين المستبعدين قبل تسجيل الـWarn
+  // ===================================================
+
+  let member;
+
+  try {
+    member = await guild.members.fetch(userId);
+  } catch (error) {
+    console.log(
+      "⚠️ لم أستطع جلب العضو:",
+      error.message
+    );
+  }
+
+  if (
+    type === "task" &&
+    member &&
+    isExcluded(member)
+  ) {
+    return false;
+  }
 
   let warnNumber;
   let roleIds;
@@ -177,18 +243,13 @@ async function addWarn(guild, userId, type, reason) {
 
   saveData(data);
 
-  // إزالة رولات التحذير القديمة وإضافة الجديدة
-  try {
-    const member = await guild.members.fetch(userId);
+  // ===================================================
+  // تعديل رول الـWarn
+  // ===================================================
 
-    // لو العضو من الرولات المستثناة، لا يأخذ Warn تاسكات
-    if (
-      type === "task" &&
-      member.roles.cache.some(role =>
-        EXCLUDED_TASK_ROLES.includes(role.id)
-      )
-    ) {
-      return;
+  try {
+    if (!member) {
+      member = await guild.members.fetch(userId);
     }
 
     for (const roleId of roleIds) {
@@ -209,7 +270,10 @@ async function addWarn(guild, userId, type, reason) {
     );
   }
 
+  // ===================================================
   // إرسال التحذير للروم
+  // ===================================================
+
   try {
     const channel =
       await guild.channels.fetch(WARN_CHANNEL_ID);
@@ -218,21 +282,17 @@ async function addWarn(guild, userId, type, reason) {
       const embed = new EmbedBuilder()
         .setTitle("⚠️ تحذير جديد")
         .setDescription(
-          "<@" + userId + ">\n\n" +
-          "📌 النوع: **" +
-          (type === "task" ? "تاسك" : "غياب") +
-          "**\n" +
-          "🔢 التحذير: **" +
-          warnNumber +
-          "/3**\n" +
-          "📝 السبب: **" +
-          reason +
-          "**"
+          `<@${userId}>\n\n` +
+          `📌 النوع: **${
+            type === "task" ? "تاسك" : "غياب"
+          }**\n` +
+          `🔢 التحذير: **${warnNumber}/3**\n` +
+          `📝 السبب: **${reason}**`
         )
         .setTimestamp();
 
       await channel.send({
-        content: "<@" + userId + ">",
+        content: `<@${userId}>`,
         embeds: [embed]
       });
     }
@@ -242,6 +302,8 @@ async function addWarn(guild, userId, type, reason) {
       error.message
     );
   }
+
+  return true;
 }
 
 // =====================================================
@@ -250,7 +312,10 @@ async function addWarn(guild, userId, type, reason) {
 
 const commands = [
 
+  // ===================================================
   // الحضور
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("حضور")
     .setDescription("تسجيل حضور عضو")
@@ -282,7 +347,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
   // التاسكات
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("تاسك")
     .setDescription("إضافة تاسك لجميع الأعضاء")
@@ -296,15 +364,18 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // الإداري يحدد العضو بدل رقم التاسك
   new SlashCommandBuilder()
     .setName("تسليم")
-    .setDescription("تسليم تاسك")
-    .addIntegerOption(option =>
+    .setDescription("تسجيل تسليم تاسك لعضو")
+    .addUserOption(option =>
       option
-        .setName("رقم")
-        .setDescription("رقم التاسك")
+        .setName("العضو")
+        .setDescription("العضو الذي سلّم التاسك")
         .setRequired(true)
-        .setMinValue(1)
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageGuild
     ),
 
   new SlashCommandBuilder()
@@ -318,7 +389,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
   // الغرامات
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("غرامة")
     .setDescription("إضافة غرامة لعضو")
@@ -377,7 +451,21 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
-  // التحذير اليدوي
+  new SlashCommandBuilder()
+    .setName("دفع_الغرامة")
+    .setDescription("دفع غرامة مستحقة")
+    .addIntegerOption(option =>
+      option
+        .setName("رقم")
+        .setDescription("رقم الغرامة")
+        .setRequired(true)
+        .setMinValue(1)
+    ),
+
+  // ===================================================
+  // التحذير
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("تحذير")
     .setDescription("إعطاء تحذير لعضو")
@@ -397,7 +485,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
   // الترقية
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("ترقية")
     .setDescription("ترقية عضو")
@@ -417,7 +508,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
   // التنزيل
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("تنزيل")
     .setDescription("تنزيل رتبة عضو")
@@ -437,7 +531,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
   // الإجازة
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("اجازة")
     .setDescription("إعطاء إجازة لعضو")
@@ -459,7 +556,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
   // النقاط
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("نقاط")
     .setDescription("عرض نقاط عضو")
@@ -474,7 +574,10 @@ const commands = [
     .setName("ترتيب")
     .setDescription("عرض ترتيب الأعضاء بالنقاط"),
 
+  // ===================================================
   // الإحصائيات
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("احصائيات")
     .setDescription("عرض إحصائيات عضو")
@@ -533,10 +636,8 @@ client.once("ready", async () => {
     );
   }
 
-  // فحص النظام
-  dailyCheck();
+  await dailyCheck();
 
-  // كل ساعة
   setInterval(
     dailyCheck,
     60 * 60 * 1000
@@ -554,7 +655,6 @@ client.on(
     if (!interaction.isChatInputCommand()) return;
 
     const command = interaction.commandName;
-
     const data = loadData();
 
     // ===================================================
@@ -563,7 +663,7 @@ client.on(
 
     if (command === "حضور") {
 
-      let user =
+      const user =
         interaction.options.getUser("العضو") ||
         interaction.user;
 
@@ -615,7 +715,7 @@ client.on(
 
     if (command === "انصراف") {
 
-      let user =
+      const user =
         interaction.options.getUser("العضو") ||
         interaction.user;
 
@@ -769,12 +869,7 @@ client.on(
 
         if (member.user.bot) continue;
 
-        // استثناء الرولين
-        if (
-          member.roles.cache.some(role =>
-            EXCLUDED_TASK_ROLES.includes(role.id)
-          )
-        ) {
+        if (isExcluded(member)) {
           excluded++;
           continue;
         }
@@ -794,6 +889,7 @@ client.on(
           date: egyptDate(),
           submitted: false,
           submittedAt: null,
+          submittedBy: null,
           warned: false
         });
 
@@ -811,49 +907,65 @@ client.on(
     }
 
     // ===================================================
-    // تسليم تاسك
+    // تسليم تاسك بواسطة الإداري
     // ===================================================
 
     if (command === "تسليم") {
 
-      const number =
-        interaction.options.getInteger("رقم");
+      if (!isAdmin(interaction)) {
+        return interaction.reply({
+          content:
+            "❌ الأمر ده للإدارة فقط.",
+          ephemeral: true
+        });
+      }
+
+      const user =
+        interaction.options.getUser("العضو");
+
+      let member;
+
+      try {
+        member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
+      } catch {
+        return interaction.reply({
+          content:
+            "❌ مقدرتش أوصل للعضو.",
+          ephemeral: true
+        });
+      }
+
+      if (member.user.bot) {
+        return interaction.reply({
+          content:
+            "❌ مينفعش تسجل تسليم لبوت.",
+          ephemeral: true
+        });
+      }
+
+      if (isExcluded(member)) {
+        return interaction.reply({
+          content:
+            "🚫 العضو ده مستثنى من نظام التاسكات.",
+          ephemeral: true
+        });
+      }
 
       const player =
-        data[interaction.user.id];
-
-      // الرولين المستثنين لا يتعاملوا مع التاسكات
-      if (
-        interaction.member.roles.cache.some(role =>
-          EXCLUDED_TASK_ROLES.includes(role.id)
-        )
-      ) {
-        return interaction.reply({
-          content:
-            "🚫 أنت مستثنى من نظام التاسكات.",
-          ephemeral: true
-        });
-      }
-
-      if (!player) {
-        return interaction.reply({
-          content:
-            "❌ مفيش بيانات ليك.",
-          ephemeral: true
-        });
-      }
+        ensurePlayer(data, user);
 
       const task =
         player.tasks.find(
-          t =>
-            t.id === number &&
-            !t.submitted
+          task => !task.submitted
         );
 
       if (!task) {
         return interaction.reply({
           content:
-            "❌ التاسك مش موجود أو اتسلّم بالفعل.",
+            `❌ مفيش تاسك معلق على ${user}.`,
           ephemeral: true
         });
       }
@@ -862,13 +974,23 @@ client.on(
       task.submittedAt =
         new Date().toISOString();
 
+      task.submittedBy =
+        interaction.user.id;
+
+      // مهم: لما الإداري يسجل التسليم
+      // التاسك مش هياخد Warn بعد كده
+      task.warned = true;
+
       player.points += 2;
 
       saveData(data);
 
       return interaction.reply(
-        `✅ تم تسليم التاسك **#${number}** بنجاح.\n` +
-        `⭐ +2 نقاط`
+        `✅ **تم تسجيل تسليم التاسك**\n\n` +
+        `👤 العضو: ${user}\n` +
+        `📋 التاسك: **${task.text}**\n` +
+        `⭐ +2 نقاط\n` +
+        `🛡️ مش هياخد Warn على التاسك ده.`
       );
     }
 
@@ -878,12 +1000,16 @@ client.on(
 
     if (command === "تاسكاتي") {
 
-      // الرولين المستثنين
-      if (
-        interaction.member.roles.cache.some(role =>
-          EXCLUDED_TASK_ROLES.includes(role.id)
-        )
-      ) {
+      let member;
+
+      try {
+        member =
+          await interaction.guild.members.fetch(
+            interaction.user.id
+          );
+      } catch {}
+
+      if (member && isExcluded(member)) {
         return interaction.reply({
           content:
             "🚫 أنت مستثنى من نظام التاسكات.",
@@ -951,6 +1077,17 @@ client.on(
 
         if (!player.tasks) continue;
 
+        let member;
+
+        try {
+          member =
+            await interaction.guild.members.fetch(id);
+        } catch {
+          continue;
+        }
+
+        if (isExcluded(member)) continue;
+
         const pending =
           player.tasks.filter(
             task => !task.submitted
@@ -1015,26 +1152,80 @@ client.on(
       };
 
       const amount =
-        amounts[reason] || 0;
+        amounts[reason];
+
+      if (!amount) {
+        return interaction.reply({
+          content:
+            "❌ مبلغ الغرامة غير صحيح.",
+          ephemeral: true
+        });
+      }
 
       const player =
         ensurePlayer(data, user);
 
+      // رقم الغرامة
+      const fineId =
+        player.fines.length + 1;
+
+      const createdAt =
+        Date.now();
+
+      const deadline =
+        createdAt + FINE_DURATION;
+
       player.fines.push({
+        id: fineId,
         reason,
         amount,
         date: egyptDate(),
-        by: interaction.user.id
+        by: interaction.user.id,
+
+        paid: false,
+        paidAt: null,
+
+        createdAt,
+        deadline
       });
 
       player.points -= 1;
 
       saveData(data);
 
+      // =================================================
+      // إضافة رول الغرامة
+      // =================================================
+
+      try {
+
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
+
+        const fineRole =
+          FINE_ROLES[amount];
+
+        if (fineRole) {
+          await member.roles.add(
+            fineRole
+          );
+        }
+
+      } catch (error) {
+        console.log(
+          "⚠️ لم أستطع إضافة رول الغرامة:",
+          error.message
+        );
+      }
+
       return interaction.reply(
-        `💰 تم تسجيل غرامة على ${user}\n\n` +
+        `💰 **تم تسجيل غرامة على ${user}**\n\n` +
         `📝 السبب: **${reason}**\n` +
-        `💵 المبلغ: **${amount.toLocaleString()}**\n` +
+        `💵 المبلغ: **${amount.toLocaleString()} جنيه**\n` +
+        `🆔 رقم الغرامة: **#${fineId}**\n` +
+        `⏳ مهلة السداد: **48 ساعة**\n` +
         `⭐ -1 نقطة`
       );
     }
@@ -1053,36 +1244,85 @@ client.on(
         !player.fines ||
         player.fines.length === 0
       ) {
-        return interaction.reply(
-          "✅ مفيش غرامات عليك."
-        );
+        return interaction.reply({
+          content:
+            "✅ مفيش غرامات عليك.",
+          ephemeral: true
+        });
       }
 
-      const total =
-        player.fines.reduce(
-          (sum, fine) =>
-            sum + fine.amount,
-          0
-        );
+      const now = Date.now();
 
       const list =
         player.fines
           .slice(-10)
-          .map(
-            fine =>
-              `💰 **${fine.amount.toLocaleString()}** — ` +
-              `${fine.reason} — ${fine.date}`
-          )
-          .join("\n");
+          .map((fine, index) => {
+
+            const id =
+              fine.id || index + 1;
+
+            const paid =
+              fine.paid === true;
+
+            let status;
+
+            if (paid) {
+              status = "✅ مدفوعة";
+            } else if (
+              fine.deadline &&
+              now >= fine.deadline
+            ) {
+              status = "🔴 متأخرة";
+            } else if (fine.deadline) {
+
+              const remaining =
+                fine.deadline - now;
+
+              const hours =
+                Math.ceil(
+                  remaining / 3600000
+                );
+
+              status =
+                `⏳ باقي ${hours} ساعة`;
+            } else {
+              status = "⏳ غير مدفوعة";
+            }
+
+            return (
+              `🆔 **#${id}**\n` +
+              `💰 **${fine.amount.toLocaleString()} جنيه**\n` +
+              `📝 ${fine.reason}\n` +
+              `📅 ${fine.date}\n` +
+              `📌 ${status}`
+            );
+          })
+          .join("\n\n");
+
+      const unpaid =
+        player.fines.filter(
+          fine => fine.paid !== true
+        );
+
+      const total =
+        unpaid.reduce(
+          (sum, fine) =>
+            sum + fine.amount,
+          0
+        );
 
       const embed =
         new EmbedBuilder()
           .setTitle("💰 غراماتك")
           .setDescription(list)
           .addFields({
-            name: "الإجمالي",
+            name: "💵 إجمالي الغرامات غير المدفوعة",
             value:
               `${total.toLocaleString()} جنيه`
+          })
+          .setFooter({
+            text:
+              "لدفع غرامة استخدم /دفع_الغرامة"
           })
           .setTimestamp();
 
@@ -1091,84 +1331,100 @@ client.on(
         ephemeral: true
       });
     }
+
     // ===================================================
-// دفع الغرامة
-// ===================================================
+    // دفع الغرامة
+    // ===================================================
 
-if (command === "دفع_الغرامة") {
+    if (command === "دفع_الغرامة") {
 
-  const number =
-    interaction.options.getInteger("رقم");
+      const number =
+        interaction.options.getInteger("رقم");
 
-  const player =
-    data[interaction.user.id];
+      const player =
+        data[interaction.user.id];
 
-  if (
-    !player ||
-    !player.fines ||
-    player.fines.length === 0
-  ) {
-    return interaction.reply({
-      content: "✅ مفيش غرامات عليك.",
-      ephemeral: true
-    });
-  }
+      if (
+        !player ||
+        !player.fines ||
+        player.fines.length === 0
+      ) {
+        return interaction.reply({
+          content:
+            "✅ مفيش غرامات عليك.",
+          ephemeral: true
+        });
+      }
 
-  const fine =
-    player.fines.find(
-      (f, index) =>
-        (f.id === number || index + 1 === number) &&
-        f.paid !== true
-    );
+      const fine =
+        player.fines.find(
+          (f, index) =>
+            (
+              f.id === number ||
+              (!f.id && index + 1 === number)
+            ) &&
+            f.paid !== true
+        );
 
-  if (!fine) {
-    return interaction.reply({
-      content:
-        "❌ الغرامة دي مش موجودة أو اتدفعت بالفعل.",
-      ephemeral: true
-    });
-  }
+      if (!fine) {
+        return interaction.reply({
+          content:
+            "❌ الغرامة دي مش موجودة أو اتدفعت بالفعل.",
+          ephemeral: true
+        });
+      }
 
-  fine.paid = true;
-  fine.paidAt = Date.now();
+      fine.paid = true;
+      fine.paidAt = Date.now();
 
-  saveData(data);
+      saveData(data);
 
-  // شيل رول الغرامة لو مفيش غرامة تانية بنفس المبلغ
-  try {
-    const member =
-      await interaction.guild.members.fetch(
-        interaction.user.id
+      // =================================================
+      // إزالة رول الغرامة
+      // =================================================
+
+      try {
+
+        const member =
+          await interaction.guild.members.fetch(
+            interaction.user.id
+          );
+
+        const fineRole =
+          FINE_ROLES[fine.amount];
+
+        const hasAnotherFine =
+          player.fines.some(
+            f =>
+              f !== fine &&
+              f.paid !== true &&
+              f.amount === fine.amount
+          );
+
+        if (
+          fineRole &&
+          !hasAnotherFine &&
+          member.roles.cache.has(fineRole)
+        ) {
+          await member.roles.remove(
+            fineRole
+          );
+        }
+
+      } catch (error) {
+        console.log(
+          "⚠️ لم أستطع إزالة رول الغرامة:",
+          error.message
+        );
+      }
+
+      return interaction.reply(
+        `✅ **تم دفع الغرامة #${fine.id} بنجاح**\n\n` +
+        `💵 المبلغ: **${fine.amount.toLocaleString()} جنيه**\n` +
+        `📝 السبب: **${fine.reason}**\n` +
+        `💳 الحالة: **مدفوعة**`
       );
-
-    const fineRole =
-      FINE_ROLES[fine.amount];
-
-    const hasAnotherFine =
-      player.fines.some(
-        f =>
-          f !== fine &&
-          f.paid !== true &&
-          f.amount === fine.amount
-      );
-
-    if (fineRole && !hasAnotherFine) {
-      await member.roles.remove(fineRole).catch(() => {});
     }
-  } catch (error) {
-    console.log(
-      "⚠️ لم أستطع إزالة رول الغرامة:",
-      error.message
-    );
-  }
-
-  return interaction.reply(
-    `✅ **تم دفع الغرامة #${fine.id} بنجاح**\n\n` +
-    `💵 المبلغ: **${fine.amount.toLocaleString()} جنيه**\n` +
-    `📝 السبب: **${fine.reason}**\n` +
-    `💳 الحالة: **مدفوعة**`
-  );
-}
 
     // ===================================================
     // غرامات العضو
@@ -1200,26 +1456,50 @@ if (command === "دفع_الغرامة") {
         );
       }
 
+      const now = Date.now();
+
       const total =
-        player.fines.reduce(
-          (sum, fine) =>
-            sum + fine.amount,
-          0
-        );
+        player.fines
+          .filter(fine => fine.paid !== true)
+          .reduce(
+            (sum, fine) =>
+              sum + fine.amount,
+            0
+          );
 
       const list =
         player.fines
-          .map(
-            fine =>
-              `💰 ${fine.amount.toLocaleString()} — ` +
-              `${fine.reason} — ${fine.date}`
-          )
-          .join("\n");
+          .map((fine, index) => {
+
+            const id =
+              fine.id || index + 1;
+
+            let status;
+
+            if (fine.paid === true) {
+              status = "✅ مدفوعة";
+            } else if (
+              fine.deadline &&
+              now >= fine.deadline
+            ) {
+              status = "🔴 متأخرة";
+            } else {
+              status = "⏳ غير مدفوعة";
+            }
+
+            return (
+              `🆔 #${id} — ` +
+              `💰 ${fine.amount.toLocaleString()} جنيه\n` +
+              `📝 ${fine.reason}\n` +
+              `📅 ${fine.date} — ${status}`
+            );
+          })
+          .join("\n\n");
 
       return interaction.reply(
         `💰 **غرامات ${user}**\n\n` +
         `${list}\n\n` +
-        `💵 **الإجمالي: ${total.toLocaleString()} جنيه**`
+        `💵 **المتبقي غير المدفوع: ${total.toLocaleString()} جنيه**`
       );
     }
 
@@ -1247,7 +1527,8 @@ if (command === "دفع_الغرامة") {
         interaction.guild,
         user.id,
         "absence",
-        reason
+        reason,
+        data
       );
 
       return interaction.reply(
@@ -1463,21 +1744,29 @@ if (command === "دفع_الغرامة") {
       }
 
       const completedTasks =
-        player.tasks.filter(
-          task => task.submitted
-        ).length;
+        (player.tasks || [])
+          .filter(
+            task => task.submitted
+          )
+          .length;
 
       const pendingTasks =
-        player.tasks.filter(
-          task => !task.submitted
-        ).length;
+        (player.tasks || [])
+          .filter(
+            task => !task.submitted
+          )
+          .length;
 
       const totalFines =
-        player.fines.reduce(
-          (sum, fine) =>
-            sum + fine.amount,
-          0
-        );
+        (player.fines || [])
+          .filter(
+            fine => fine.paid !== true
+          )
+          .reduce(
+            (sum, fine) =>
+              sum + fine.amount,
+            0
+          );
 
       const embed =
         new EmbedBuilder()
@@ -1516,7 +1805,7 @@ if (command === "دفع_الغرامة") {
               inline: true
             },
             {
-              name: "💰 الغرامات",
+              name: "💰 الغرامات غير المدفوعة",
               value:
                 `${totalFines.toLocaleString()} جنيه`,
               inline: true
@@ -1564,35 +1853,45 @@ if (command === "دفع_الغرامة") {
           attendance++;
         }
 
-        // تجاهل بيانات أعضاء الرولين المستثنين
         try {
-          const member =
-            await interaction.guild.members
-              .fetch(userId);
 
-          const excluded =
-            member.roles.cache.some(role =>
-              EXCLUDED_TASK_ROLES.includes(role.id)
+          const member =
+            await interaction.guild.members.fetch(
+              userId
             );
 
+          const excluded =
+            isExcluded(member);
+
           if (!excluded) {
-            for (const task of player.tasks || []) {
-              if (task.submitted) tasks++;
-              else pending++;
+
+            for (
+              const task
+              of player.tasks || []
+            ) {
+              if (task.submitted) {
+                tasks++;
+              } else {
+                pending++;
+              }
             }
           }
+
         } catch {
-          for (const task of player.tasks || []) {
-            if (task.submitted) tasks++;
-            else pending++;
+          // لو العضو مش موجود، نتجاهل تاسكاته
+        }
+
+        for (
+          const fine
+          of player.fines || []
+        ) {
+          if (fine.paid !== true) {
+            fines += fine.amount;
           }
         }
 
-        for (const fine of player.fines || []) {
-          fines += fine.amount;
-        }
-
-        warns += player.totalWarns || 0;
+        warns +=
+          player.totalWarns || 0;
       }
 
       const embed =
@@ -1620,7 +1919,7 @@ if (command === "دفع_الغرامة") {
               inline: true
             },
             {
-              name: "💰 إجمالي الغرامات",
+              name: "💰 الغرامات غير المدفوعة",
               value:
                 `${fines.toLocaleString()} جنيه`,
               inline: true
@@ -1649,10 +1948,6 @@ async function dailyCheck() {
     const guild
     of client.guilds.cache.values()
   ) {
-
-    // ===============================================
-    // فحص الأعضاء
-    // ===============================================
 
     let members;
 
@@ -1733,7 +2028,8 @@ async function dailyCheck() {
             guild,
             member.id,
             "absence",
-            "الغياب يومين متتاليين"
+            "الغياب يومين متتاليين",
+            data
           );
 
           player.lastAbsenceCheck = today;
@@ -1741,16 +2037,16 @@ async function dailyCheck() {
       }
 
       // =============================================
-      // التاسكات القديمة غير المسلمة
+      // الرولين المستثنين
       // =============================================
 
-      // الرولين المستثنين لا يدخلوا نظام التاسكات
-      const excluded =
-        member.roles.cache.some(role =>
-          EXCLUDED_TASK_ROLES.includes(role.id)
-        );
+      if (isExcluded(member)) {
+        continue;
+      }
 
-      if (excluded) continue;
+      // =============================================
+      // التاسكات القديمة غير المسلمة
+      // =============================================
 
       for (
         const task
@@ -1772,7 +2068,8 @@ async function dailyCheck() {
             guild,
             member.id,
             "task",
-            `عدم تسليم التاسك #${task.id}: ${task.text}`
+            `عدم تسليم التاسك #${task.id}: ${task.text}`,
+            data
           );
         }
       }
