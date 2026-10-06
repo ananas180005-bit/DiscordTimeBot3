@@ -44,6 +44,26 @@ const EXCLUDED_TASK_ROLES = [
   "1546140695314571304"
 ];
 
+// =====================================================
+// الأعضاء المستثنين من التاسكات
+// =====================================================
+
+const EXCLUDED_TASK_USERS = [
+  "1187451850107134002",
+  "1013168743750316142",
+  "1328100209636413461",
+  "1529637881444962538",
+  "703007354777632788",
+  "1010434831001325608",
+  "1262517138569297963",
+  "1393759774793011301",
+  "1246467979642798120",
+  "818562145079263292",
+  "1399163417981620327",
+  "476230462164041749",
+  "1332842326824980553"
+];
+
 // رولات الغرامات حسب المبلغ
 const FINE_ROLES = {
   3000: "1556929755691876403",
@@ -106,12 +126,23 @@ function daysBetween(date1, date2) {
 }
 
 // =====================================================
-// التأكد إن العضو مش مستثنى
+// التأكد من الرولات المستثناة
 // =====================================================
 
 function isExcluded(member) {
   return member.roles.cache.some(role =>
     EXCLUDED_TASK_ROLES.includes(role.id)
+  );
+}
+
+// =====================================================
+// التأكد إن العضو مستثنى من التاسكات
+// =====================================================
+
+function isTaskExcluded(member) {
+  return (
+    EXCLUDED_TASK_USERS.includes(member.id) ||
+    isExcluded(member)
   );
 }
 
@@ -204,7 +235,7 @@ async function addWarn(
   const player = data[userId];
 
   // ===================================================
-  // التأكد من الرولين المستبعدين قبل تسجيل الـWarn
+  // التأكد من الاستثناءات الخاصة بالتاسكات
   // ===================================================
 
   let member;
@@ -221,7 +252,7 @@ async function addWarn(
   if (
     type === "task" &&
     member &&
-    isExcluded(member)
+    isTaskExcluded(member)
   ) {
     return false;
   }
@@ -364,7 +395,6 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
-  // الإداري يحدد العضو بدل رقم التاسك
   new SlashCommandBuilder()
     .setName("تسليم")
     .setDescription("تسجيل تسليم تاسك لعضو")
@@ -869,7 +899,7 @@ client.on(
 
         if (member.user.bot) continue;
 
-        if (isExcluded(member)) {
+        if (isTaskExcluded(member)) {
           excluded++;
           continue;
         }
@@ -946,7 +976,7 @@ client.on(
         });
       }
 
-      if (isExcluded(member)) {
+      if (isTaskExcluded(member)) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى من نظام التاسكات.",
@@ -971,14 +1001,13 @@ client.on(
       }
 
       task.submitted = true;
+
       task.submittedAt =
         new Date().toISOString();
 
       task.submittedBy =
         interaction.user.id;
 
-      // مهم: لما الإداري يسجل التسليم
-      // التاسك مش هياخد Warn بعد كده
       task.warned = true;
 
       player.points += 2;
@@ -1009,7 +1038,7 @@ client.on(
           );
       } catch {}
 
-      if (member && isExcluded(member)) {
+      if (member && isTaskExcluded(member)) {
         return interaction.reply({
           content:
             "🚫 أنت مستثنى من نظام التاسكات.",
@@ -1086,7 +1115,7 @@ client.on(
           continue;
         }
 
-        if (isExcluded(member)) continue;
+        if (isTaskExcluded(member)) continue;
 
         const pending =
           player.tasks.filter(
@@ -1165,7 +1194,6 @@ client.on(
       const player =
         ensurePlayer(data, user);
 
-      // رقم الغرامة
       const fineId =
         player.fines.length + 1;
 
@@ -1861,7 +1889,7 @@ client.on(
             );
 
           const excluded =
-            isExcluded(member);
+            isTaskExcluded(member);
 
           if (!excluded) {
 
@@ -2037,10 +2065,10 @@ async function dailyCheck() {
       }
 
       // =============================================
-      // الرولين المستثنين
+      // المستثنين من التاسكات
       // =============================================
 
-      if (isExcluded(member)) {
+      if (isTaskExcluded(member)) {
         continue;
       }
 
