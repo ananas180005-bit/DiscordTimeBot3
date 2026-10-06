@@ -70,13 +70,20 @@ const EXCLUDED_USERS = [
   "1332842326824980553"
 ];
 
+// =====================================================
 // رولات الغرامات
+// =====================================================
+// مهم:
+// هنا الربط بالسبب وليس بالمبلغ
+// عشان فيه غرامتين مختلفتين بنفس مبلغ 5000
+// =====================================================
+
 const FINE_ROLES = {
-  3000: "1556929755691876403",
-  2500: "1556929805818003516",
-  2000: "1556930071833346057",
-  1500: "1556929974852780053",
-  1000: "1556929931500326912"
+  "عدم انصياع للأوامر": "1556929931500326912",
+  "أشياء غير لائقة": "1556929974852780053",
+  "التأخير عن مهمة": "1556930071833346057",
+  "الغياب بدون إذن": "1556929805818003516",
+  "مخالفة قوانين العصابة": "1556929755691876403"
 };
 
 const FINE_DURATION = 48 * 60 * 60 * 1000;
@@ -298,7 +305,6 @@ async function updateAttendancePanel(guild, data = null) {
       }
     }
 
-    // لو الرسالة مش موجودة نعملها من جديد
     if (!panelMessage) {
 
       const embed =
@@ -377,7 +383,6 @@ async function updateAttendancePanel(guild, data = null) {
         `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
         membersList.join("\n");
 
-      // حماية من تجاوز حد Discord
       if (description.length > 4000) {
 
         description =
@@ -430,10 +435,6 @@ async function setupAttendancePanel(guild) {
 
     const panelData =
       loadAttendancePanel();
-
-    // ================================================
-    // رسالة الزراير
-    // ================================================
 
     let attendanceMessage = null;
 
@@ -512,10 +513,6 @@ async function setupAttendancePanel(guild) {
       saveAttendancePanel(panelData);
     }
 
-    // ================================================
-    // لوحة الحاضرين
-    // ================================================
-
     await updateAttendancePanel(
       guild
     );
@@ -541,7 +538,6 @@ async function addWarn(
   mainData = null
 ) {
 
-  // منع الـ13 من أي Warn نهائيًا
   if (isFullyExcluded(userId)) {
     return false;
   }
@@ -585,7 +581,6 @@ async function addWarn(
     );
   }
 
-  // منع أي Task Warn أو Absence Warn
   if (
     member &&
     isFullyExcluded(member)
@@ -593,7 +588,6 @@ async function addWarn(
     return false;
   }
 
-  // استثناء رولات التاسكات
   if (
     type === "task" &&
     member &&
@@ -636,10 +630,6 @@ async function addWarn(
 
   saveData(data);
 
-  // ===================================================
-  // تعديل رول الـWarn
-  // ===================================================
-
   try {
 
     if (!member) {
@@ -680,10 +670,6 @@ async function addWarn(
       error.message
     );
   }
-
-  // ===================================================
-  // إرسال التحذير
-  // ===================================================
 
   try {
 
@@ -780,6 +766,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
+  // غرامة
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("غرامة")
     .setDescription("إضافة غرامة لعضو")
@@ -796,23 +786,23 @@ const commands = [
         .setRequired(true)
         .addChoices(
           {
-            name: "عدم انصياع للأوامر — 3000",
+            name: "عدم انصياع للأوامر — 10,000",
             value: "عدم انصياع للأوامر"
           },
           {
-            name: "أشياء غير لائقة — 2500",
+            name: "أشياء غير لائقة — 5,000",
             value: "أشياء غير لائقة"
           },
           {
-            name: "التأخير عن مهمة — 1000",
+            name: "التأخير عن مهمة — 5,000",
             value: "التأخير عن مهمة"
           },
           {
-            name: "الغياب بدون إذن — 1500",
+            name: "الغياب بدون إذن — 20,000",
             value: "الغياب بدون إذن"
           },
           {
-            name: "مخالفة قوانين العصابة — 2000",
+            name: "مخالفة قوانين العصابة — 30,000",
             value: "مخالفة قوانين العصابة"
           }
         )
@@ -997,7 +987,6 @@ client.once("ready", async () => {
         guild.name
       );
 
-      // إنشاء نظام الحضور
       await setupAttendancePanel(guild);
     }
 
@@ -1011,7 +1000,6 @@ client.once("ready", async () => {
 
   await dailyCheck();
 
-  // تحديث وفحص كل ساعة
   setInterval(
     dailyCheck,
     60 * 60 * 1000
@@ -1046,7 +1034,6 @@ client.on(
       const user =
         interaction.user;
 
-      // الـ13 مستثنين بالكامل
       if (
         isFullyExcluded(user.id)
       ) {
@@ -1066,10 +1053,6 @@ client.on(
 
       const today =
         egyptDate();
-
-      // ==============================================
-      // تسجيل حضور
-      // ==============================================
 
       if (
         interaction.customId ===
@@ -1114,10 +1097,6 @@ client.on(
           ephemeral: true
         });
       }
-
-      // ==============================================
-      // تسجيل انصراف
-      // ==============================================
 
       if (
         interaction.customId ===
@@ -1633,12 +1612,16 @@ client.on(
       const reason =
         interaction.options.getString("السبب");
 
+      // =================================================
+      // مبالغ الغرامات الجديدة
+      // =================================================
+
       const amounts = {
-        "عدم انصياع للأوامر": 3000,
-        "أشياء غير لائقة": 2500,
-        "التأخير عن مهمة": 1000,
-        "الغياب بدون إذن": 1500,
-        "مخالفة قوانين العصابة": 2000
+        "عدم انصياع للأوامر": 10000,
+        "أشياء غير لائقة": 5000,
+        "التأخير عن مهمة": 5000,
+        "الغياب بدون إذن": 20000,
+        "مخالفة قوانين العصابة": 30000
       };
 
       const amount =
@@ -1653,6 +1636,9 @@ client.on(
         });
       }
 
+      const fineRole =
+        FINE_ROLES[reason];
+
       const player =
         ensurePlayer(data, user);
 
@@ -1665,10 +1651,15 @@ client.on(
       const deadline =
         createdAt + FINE_DURATION;
 
+      // =================================================
+      // حفظ الغرامة مع الرول الخاص بيها
+      // =================================================
+
       player.fines.push({
         id: fineId,
         reason,
         amount,
+        role: fineRole,
         date: egyptDate(),
         by: interaction.user.id,
         paid: false,
@@ -1681,15 +1672,16 @@ client.on(
 
       saveData(data);
 
+      // =================================================
+      // إضافة رول الغرامة
+      // =================================================
+
       try {
 
         const member =
           await interaction.guild.members.fetch(
             user.id
           );
-
-        const fineRole =
-          FINE_ROLES[amount];
 
         if (fineRole) {
 
@@ -1906,15 +1898,27 @@ client.on(
             interaction.user.id
           );
 
+        // =================================================
+        // الرول بيتحدد من سبب الغرامة
+        // =================================================
+
         const fineRole =
-          FINE_ROLES[fine.amount];
+          fine.role ||
+          FINE_ROLES[fine.reason];
+
+        // =================================================
+        // نشوف هل فيه غرامة تانية بنفس الرول
+        // =================================================
 
         const hasAnotherFine =
           player.fines.some(
             f =>
               f !== fine &&
               f.paid !== true &&
-              f.amount === fine.amount
+              (
+                f.role ||
+                FINE_ROLES[f.reason]
+              ) === fineRole
           );
 
         if (
@@ -2583,10 +2587,6 @@ async function dailyCheck() {
       if (member.user.bot)
         continue;
 
-      // =================================================
-      // تجاهل الـ13 بالكامل
-      // =================================================
-
       if (isFullyExcluded(member))
         continue;
 
@@ -2729,7 +2729,6 @@ async function dailyCheck() {
 
   saveData(data);
 
-  // تحديث لوحة الحاضرين بعد التصفير
   if (attendanceWasReset) {
 
     for (
