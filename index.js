@@ -1,4 +1,3 @@
-```js
 const {
   Client,
   GatewayIntentBits,
@@ -153,7 +152,7 @@ function saveData(data) {
 }
 
 // =====================================================
-// التاريخ
+// التاريخ بتوقيت مصر
 // =====================================================
 
 function egyptDate(date = new Date()) {
@@ -163,6 +162,20 @@ function egyptDate(date = new Date()) {
     month: "2-digit",
     day: "2-digit"
   }).format(date);
+}
+
+// =====================================================
+// الساعة بتوقيت مصر
+// =====================================================
+
+function egyptHour(date = new Date()) {
+  return Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Africa/Cairo",
+      hour: "2-digit",
+      hour12: false
+    }).format(date)
+  );
 }
 
 // =====================================================
@@ -348,25 +361,29 @@ async function updateAttendancePanel(guild, data = null) {
             );
 
           membersList.push(
-            `🟢 ${member}`
+            "🟢 " + member
           );
 
         } catch {
 
           membersList.push(
-            `🟢 <@${userId}>`
+            "🟢 <@" + userId + ">"
           );
         }
       }
 
       description =
-        `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
+        "👥 **عدد الحاضرين: " +
+        presentUsers.length +
+        "**\n\n" +
         membersList.join("\n");
 
       if (description.length > 4000) {
 
         description =
-          `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
+          "👥 **عدد الحاضرين: " +
+          presentUsers.length +
+          "**\n\n" +
           membersList
             .slice(0, 100)
             .join("\n") +
@@ -2508,6 +2525,10 @@ async function dailyCheck() {
   const today =
     egyptDate(now);
 
+  // الساعة الحالية في مصر
+  const currentEgyptHour =
+    egyptHour(now);
+
   for (
     const guild
     of client.guilds.cache.values()
@@ -2622,49 +2643,50 @@ async function dailyCheck() {
       // التاسكات + مهلة 4 ساعات
       // =================================================
 
-      for (
-        const task
-        of player.tasks || []
-      ) {
+      /*
+       * مثال:
+       *
+       * التاسك اتعمل يوم 6 أكتوبر.
+       *
+       * اليوم الجديد يبدأ:
+       * 7 أكتوبر الساعة 12:00 منتصف الليل.
+       *
+       * فترة السماح:
+       * من 12:00 لحد 04:00 صباحًا.
+       *
+       * بعد 04:00 صباحًا:
+       * يتم إعطاء Warn للتاسك غير المسلم.
+       */
 
-        if (
-          task.submitted ||
-          task.warned
-        ) {
-          continue;
-        }
+      if (currentEgyptHour >= 4) {
 
-        /*
-         * التاسك بتاريخ 6 أكتوبر
-         * ينتهي يوم 6 أكتوبر الساعة 12:00 بالليل
-         * والمهلة الإضافية 4 ساعات
-         *
-         * يعني الـ Warn يبدأ من:
-         * 7 أكتوبر الساعة 04:00 صباحًا
-         */
-
-        const taskDeadline =
-          new Date(
-            `${task.date}T04:00:00+03:00`
-          );
-
-        taskDeadline.setDate(
-          taskDeadline.getDate() + 1
-        );
-
-        if (
-          now >= taskDeadline
+        for (
+          const task
+          of player.tasks || []
         ) {
 
-          task.warned = true;
+          if (
+            task.submitted ||
+            task.warned
+          ) {
+            continue;
+          }
 
-          await addWarn(
-            guild,
-            member.id,
-            "task",
-            `عدم تسليم التاسك #${task.id}: ${task.text}`,
-            data
-          );
+          // لازم يكون التاسك من يوم سابق
+          if (
+            task.date !== today
+          ) {
+
+            task.warned = true;
+
+            await addWarn(
+              guild,
+              member.id,
+              "task",
+              `عدم تسليم التاسك #${task.id}: ${task.text}`,
+              data
+            );
+          }
         }
       }
     }
@@ -2710,7 +2732,7 @@ async function dailyCheck() {
   }
 
   console.log(
-    `🔄 تم فحص النظام — ${today}`
+    `🔄 تم فحص النظام — ${today} — الساعة ${currentEgyptHour}:00 بتوقيت مصر`
   );
 }
 
@@ -2721,4 +2743,3 @@ async function dailyCheck() {
 client.login(
   process.env.TOKEN
 );
-```
