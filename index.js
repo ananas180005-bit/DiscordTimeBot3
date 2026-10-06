@@ -5,7 +5,10 @@ const {
   Routes,
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const fs = require("fs");
@@ -23,6 +26,9 @@ const client = new Client({
 // =====================================================
 
 const WARN_CHANNEL_ID = "1551005345382404147";
+
+// روم الحضور والانصراف
+const ATTENDANCE_CHANNEL_ID = "1556509433289244702";
 
 // تحذيرات التاسكات
 const TASK_WARN_ROLES = [
@@ -74,6 +80,39 @@ const FINE_ROLES = {
 };
 
 const FINE_DURATION = 48 * 60 * 60 * 1000;
+
+// =====================================================
+// بيانات رسائل الحضور
+// =====================================================
+
+const ATTENDANCE_PANEL_FILE = "./attendance_panel.json";
+
+if (!fs.existsSync(ATTENDANCE_PANEL_FILE)) {
+  fs.writeFileSync(
+    ATTENDANCE_PANEL_FILE,
+    "{}"
+  );
+}
+
+function loadAttendancePanel() {
+  try {
+    return JSON.parse(
+      fs.readFileSync(
+        ATTENDANCE_PANEL_FILE,
+        "utf8"
+      )
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveAttendancePanel(data) {
+  fs.writeFileSync(
+    ATTENDANCE_PANEL_FILE,
+    JSON.stringify(data, null, 2)
+  );
+}
 
 // =====================================================
 // فحص الاستثناء الكامل
@@ -219,6 +258,275 @@ function isAdmin(interaction) {
   return interaction.member.permissions.has(
     PermissionFlagsBits.ManageGuild
   );
+}
+
+// =====================================================
+// تحديث لوحة الحاضرين
+// =====================================================
+
+async function updateAttendancePanel(guild, data = null) {
+
+  try {
+
+    const attendanceData =
+      data || loadData();
+
+    const panelData =
+      loadAttendancePanel();
+
+    const channel =
+      await guild.channels.fetch(
+        ATTENDANCE_CHANNEL_ID
+      );
+
+    if (!channel)
+      return;
+
+    let panelMessage = null;
+
+    if (panelData.panelMessageId) {
+
+      try {
+
+        panelMessage =
+          await channel.messages.fetch(
+            panelData.panelMessageId
+          );
+
+      } catch {
+        panelMessage = null;
+      }
+    }
+
+    // لو الرسالة مش موجودة نعملها من جديد
+    if (!panelMessage) {
+
+      const embed =
+        new EmbedBuilder()
+          .setTitle("📋 لوحة الحاضرين")
+          .setDescription(
+            "⏳ جاري تحميل الحاضرين..."
+          )
+          .setTimestamp();
+
+      panelMessage =
+        await channel.send({
+          embeds: [embed]
+        });
+
+      panelData.panelMessageId =
+        panelMessage.id;
+
+      saveAttendancePanel(panelData);
+    }
+
+    const presentUsers = [];
+
+    for (
+      const [userId, player]
+      of Object.entries(attendanceData)
+    ) {
+
+      if (
+        isFullyExcluded(userId)
+      ) {
+        continue;
+      }
+
+      if (
+        player.presentToday === true
+      ) {
+
+        presentUsers.push(userId);
+      }
+    }
+
+    let description;
+
+    if (presentUsers.length === 0) {
+
+      description =
+        "📭 **مفيش حد مسجل حضور حاليًا.**";
+
+    } else {
+
+      const membersList = [];
+
+      for (const userId of presentUsers) {
+
+        try {
+
+          const member =
+            await guild.members.fetch(
+              userId
+            );
+
+          membersList.push(
+            `🟢 ${member}`
+          );
+
+        } catch {
+
+          membersList.push(
+            `🟢 <@${userId}>`
+          );
+        }
+      }
+
+      description =
+        `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
+        membersList.join("\n");
+
+      // حماية من تجاوز حد Discord
+      if (description.length > 4000) {
+
+        description =
+          `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
+          membersList
+            .slice(0, 100)
+            .join("\n") +
+          "\n\n⚠️ تم اختصار القائمة بسبب عدد الأعضاء.";
+      }
+    }
+
+    const embed =
+      new EmbedBuilder()
+        .setTitle("📋 لوحة الحاضرين")
+        .setDescription(description)
+        .setFooter({
+          text:
+            "تتحدث اللوحة تلقائيًا مع تسجيل الحضور والانصراف"
+        })
+        .setTimestamp();
+
+    await panelMessage.edit({
+      embeds: [embed]
+    });
+
+  } catch (error) {
+
+    console.log(
+      "⚠️ خطأ في تحديث لوحة الحاضرين:",
+      error.message
+    );
+  }
+}
+
+// =====================================================
+// إنشاء رسالة الحضور والانصراف
+// =====================================================
+
+async function setupAttendancePanel(guild) {
+
+  try {
+
+    const channel =
+      await guild.channels.fetch(
+        ATTENDANCE_CHANNEL_ID
+      );
+
+    if (!channel)
+      return;
+
+    const panelData =
+      loadAttendancePanel();
+
+    // ================================================
+    // رسالة الزراير
+    // ================================================
+
+    let attendanceMessage = null;
+
+    if (
+      panelData.attendanceMessageId
+    ) {
+
+      try {
+
+        attendanceMessage =
+          await channel.messages.fetch(
+            panelData.attendanceMessageId
+          );
+
+      } catch {
+        attendanceMessage = null;
+      }
+    }
+
+    if (!attendanceMessage) {
+
+      const embed =
+        new EmbedBuilder()
+          .setTitle("🕐 تسجيل الحضور والانصراف")
+          .setDescription(
+            "اضغط على الزر المناسب لتسجيل حالتك.\n\n" +
+            "🟢 **تسجيل حضور**\n" +
+            "سجل حضورك واسمك هيظهر في لوحة الحاضرين.\n\n" +
+            "🔴 **تسجيل انصراف**\n" +
+            "سجل انصرافك واسمك هيتشال من لوحة الحاضرين."
+          )
+          .setFooter({
+            text:
+              "كل عضو يقدر يستخدم الأزرار بنفسه"
+          })
+          .setTimestamp();
+
+      const row =
+        new ActionRowBuilder()
+          .addComponents(
+
+            new ButtonBuilder()
+              .setCustomId(
+                "attendance_check_in"
+              )
+              .setLabel(
+                "تسجيل حضور"
+              )
+              .setEmoji("🟢")
+              .setStyle(
+                ButtonStyle.Success
+              ),
+
+            new ButtonBuilder()
+              .setCustomId(
+                "attendance_check_out"
+              )
+              .setLabel(
+                "تسجيل انصراف"
+              )
+              .setEmoji("🔴")
+              .setStyle(
+                ButtonStyle.Danger
+              )
+          );
+
+      attendanceMessage =
+        await channel.send({
+          embeds: [embed],
+          components: [row]
+        });
+
+      panelData.attendanceMessageId =
+        attendanceMessage.id;
+
+      saveAttendancePanel(panelData);
+    }
+
+    // ================================================
+    // لوحة الحاضرين
+    // ================================================
+
+    await updateAttendancePanel(
+      guild
+    );
+
+  } catch (error) {
+
+    console.log(
+      "⚠️ خطأ في إنشاء نظام الحضور:",
+      error.message
+    );
+  }
 }
 
 // =====================================================
@@ -423,26 +731,6 @@ async function addWarn(
 // =====================================================
 
 const commands = [
-
-  new SlashCommandBuilder()
-    .setName("حضور")
-    .setDescription("تسجيل حضور عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(false)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("انصراف")
-    .setDescription("تسجيل انصراف عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(false)
-    ),
 
   new SlashCommandBuilder()
     .setName("حضوراتي")
@@ -708,6 +996,9 @@ client.once("ready", async () => {
         "تم تسجيل الأوامر في: " +
         guild.name
       );
+
+      // إنشاء نظام الحضور
+      await setupAttendancePanel(guild);
     }
 
   } catch (error) {
@@ -720,6 +1011,7 @@ client.once("ready", async () => {
 
   await dailyCheck();
 
+  // تحديث وفحص كل ساعة
   setInterval(
     dailyCheck,
     60 * 60 * 1000
@@ -734,131 +1026,146 @@ client.on(
   "interactionCreate",
   async interaction => {
 
+    // =================================================
+    // أزرار الحضور والانصراف
+    // =================================================
+
+    if (
+      interaction.isButton() &&
+      (
+        interaction.customId ===
+          "attendance_check_in" ||
+        interaction.customId ===
+          "attendance_check_out"
+      )
+    ) {
+
+      const data =
+        loadData();
+
+      const user =
+        interaction.user;
+
+      // الـ13 مستثنين بالكامل
+      if (
+        isFullyExcluded(user.id)
+      ) {
+
+        return interaction.reply({
+          content:
+            "🚫 أنت مستثنى بالكامل من نظام البوت.",
+          ephemeral: true
+        });
+      }
+
+      const player =
+        ensurePlayer(
+          data,
+          user
+        );
+
+      const today =
+        egyptDate();
+
+      // ==============================================
+      // تسجيل حضور
+      // ==============================================
+
+      if (
+        interaction.customId ===
+        "attendance_check_in"
+      ) {
+
+        if (
+          player.presentToday
+        ) {
+
+          return interaction.reply({
+            content:
+              "⚠️ أنت مسجل حضور بالفعل.",
+            ephemeral: true
+          });
+        }
+
+        player.presentToday = true;
+        player.lastAttendance = today;
+
+        if (
+          !player.attendance.includes(today)
+        ) {
+
+          player.attendance.push(today);
+        }
+
+        player.points += 1;
+
+        saveData(data);
+
+        await updateAttendancePanel(
+          interaction.guild,
+          data
+        );
+
+        return interaction.reply({
+          content:
+            `🟢 **تم تسجيل حضورك بنجاح!**\n` +
+            `📅 التاريخ: **${today}**\n` +
+            `⭐ +1 نقطة`,
+          ephemeral: true
+        });
+      }
+
+      // ==============================================
+      // تسجيل انصراف
+      // ==============================================
+
+      if (
+        interaction.customId ===
+        "attendance_check_out"
+      ) {
+
+        if (
+          !player.presentToday
+        ) {
+
+          return interaction.reply({
+            content:
+              "⚠️ أنت مش مسجل حضور حاليًا.",
+            ephemeral: true
+          });
+        }
+
+        player.presentToday = false;
+
+        saveData(data);
+
+        await updateAttendancePanel(
+          interaction.guild,
+          data
+        );
+
+        return interaction.reply({
+          content:
+            "🔴 **تم تسجيل انصرافك بنجاح.**",
+          ephemeral: true
+        });
+      }
+
+      return;
+    }
+
+    // =================================================
+    // أوامر السلاش
+    // =================================================
+
     if (!interaction.isChatInputCommand())
       return;
 
     const command =
       interaction.commandName;
 
-    const data = loadData();
-
-    // =================================================
-    // الحضور
-    // =================================================
-
-    if (command === "حضور") {
-
-      const user =
-        interaction.options.getUser("العضو") ||
-        interaction.user;
-
-      if (isFullyExcluded(user.id)) {
-
-        return interaction.reply({
-          content:
-            "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
-          ephemeral: true
-        });
-      }
-
-      if (
-        user.id !== interaction.user.id &&
-        !isAdmin(interaction)
-      ) {
-
-        return interaction.reply({
-          content:
-            "❌ لا يمكنك تسجيل حضور شخص آخر.",
-          ephemeral: true
-        });
-      }
-
-      const player =
-        ensurePlayer(data, user);
-
-      const today =
-        egyptDate();
-
-      if (player.presentToday) {
-
-        return interaction.reply({
-          content:
-            "⚠️ مسجل حضور بالفعل اليوم.",
-          ephemeral: true
-        });
-      }
-
-      player.presentToday = true;
-      player.lastAttendance = today;
-
-      if (
-        !player.attendance.includes(today)
-      ) {
-        player.attendance.push(today);
-      }
-
-      player.points += 1;
-
-      saveData(data);
-
-      return interaction.reply(
-        `🟢 تم تسجيل حضور ${user}\n` +
-        `📅 ${today}\n` +
-        `⭐ +1 نقطة`
-      );
-    }
-
-    // =================================================
-    // الانصراف
-    // =================================================
-
-    if (command === "انصراف") {
-
-      const user =
-        interaction.options.getUser("العضو") ||
-        interaction.user;
-
-      if (isFullyExcluded(user.id)) {
-
-        return interaction.reply({
-          content:
-            "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
-          ephemeral: true
-        });
-      }
-
-      if (
-        user.id !== interaction.user.id &&
-        !isAdmin(interaction)
-      ) {
-
-        return interaction.reply({
-          content:
-            "❌ لا يمكنك تسجيل انصراف شخص آخر.",
-          ephemeral: true
-        });
-      }
-
-      const player =
-        ensurePlayer(data, user);
-
-      if (!player.presentToday) {
-
-        return interaction.reply({
-          content:
-            `⚠️ ${user} مش مسجل حضور النهارده.`,
-          ephemeral: true
-        });
-      }
-
-      player.presentToday = false;
-
-      saveData(data);
-
-      return interaction.reply(
-        `🔴 تم تسجيل انصراف ${user}.`
-      );
-    }
+    const data =
+      loadData();
 
     // =================================================
     // حضوراتي
@@ -945,7 +1252,6 @@ client.on(
         if (member.user.bot)
           continue;
 
-        // الـ13 مش بيتحسبوا غياب
         if (isFullyExcluded(member))
           continue;
 
@@ -2155,7 +2461,6 @@ client.on(
         of Object.entries(data)
       ) {
 
-        // تجاهل الـ13 بالكامل
         if (isFullyExcluded(userId))
           continue;
 
@@ -2403,12 +2708,13 @@ async function dailyCheck() {
   // تصفير حضور اليوم
   // ===================================================
 
+  let attendanceWasReset = false;
+
   for (
     const [userId, player]
     of Object.entries(data)
   ) {
 
-    // الـ13 مش بنعمل عليهم أي نظام
     if (isFullyExcluded(userId))
       continue;
 
@@ -2416,10 +2722,27 @@ async function dailyCheck() {
 
       player.presentToday = false;
       player.lastReset = today;
+
+      attendanceWasReset = true;
     }
   }
 
   saveData(data);
+
+  // تحديث لوحة الحاضرين بعد التصفير
+  if (attendanceWasReset) {
+
+    for (
+      const guild
+      of client.guilds.cache.values()
+    ) {
+
+      await updateAttendancePanel(
+        guild,
+        data
+      );
+    }
+  }
 
   console.log(
     `🔄 تم فحص النظام — ${today}`
