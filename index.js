@@ -1,3 +1,4 @@
+```js
 const {
   Client,
   GatewayIntentBits,
@@ -26,33 +27,24 @@ const client = new Client({
 // =====================================================
 
 const WARN_CHANNEL_ID = "1551005345382404147";
-
-// روم الحضور والانصراف
 const ATTENDANCE_CHANNEL_ID = "1556509433289244702";
 
-// تحذيرات التاسكات
 const TASK_WARN_ROLES = [
   "1551001629656883200",
   "1551001910524256366",
   "1551001972205813950"
 ];
 
-// تحذيرات الغياب
 const ABSENCE_WARN_ROLES = [
   "1550994651769475102",
   "1550995580908605591",
   "1550995666036330607"
 ];
 
-// الرولات المستثناة من التاسكات
 const EXCLUDED_TASK_ROLES = [
   "1546134518463856760",
   "1546140695314571304"
 ];
-
-// =====================================================
-// الـ13 عضو المستثنين بالكامل من البوت
-// =====================================================
 
 const EXCLUDED_USERS = [
   "1187451850107134002",
@@ -72,10 +64,6 @@ const EXCLUDED_USERS = [
 
 // =====================================================
 // رولات الغرامات
-// =====================================================
-// مهم:
-// هنا الربط بالسبب وليس بالمبلغ
-// عشان فيه غرامتين مختلفتين بنفس مبلغ 5000
 // =====================================================
 
 const FINE_ROLES = {
@@ -147,7 +135,10 @@ if (!fs.existsSync(DATA_FILE)) {
 function loadData() {
   try {
     return JSON.parse(
-      fs.readFileSync(DATA_FILE, "utf8")
+      fs.readFileSync(
+        DATA_FILE,
+        "utf8"
+      )
     );
   } catch {
     return {};
@@ -200,10 +191,6 @@ function isExcluded(member) {
   );
 }
 
-// =====================================================
-// استثناء التاسكات
-// =====================================================
-
 function isTaskExcluded(member) {
   return (
     isFullyExcluded(member) ||
@@ -221,22 +208,16 @@ function ensurePlayer(data, user) {
 
     data[user.id] = {
       name: user.username,
-
       attendance: [],
       lastAttendance: null,
       presentToday: false,
-
       tasks: [],
-
       taskWarns: 0,
       absenceWarns: 0,
       totalWarns: 0,
-
       fines: [],
       points: 0,
-
       vacations: [],
-
       lastAbsenceCheck: null,
       lastReset: null
     };
@@ -342,7 +323,6 @@ async function updateAttendancePanel(guild, data = null) {
       if (
         player.presentToday === true
       ) {
-
         presentUsers.push(userId);
       }
     }
@@ -766,10 +746,6 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
-  // ===================================================
-  // غرامة
-  // ===================================================
-
   new SlashCommandBuilder()
     .setName("غرامة")
     .setDescription("إضافة غرامة لعضو")
@@ -1014,10 +990,6 @@ client.on(
   "interactionCreate",
   async interaction => {
 
-    // =================================================
-    // أزرار الحضور والانصراف
-    // =================================================
-
     if (
       interaction.isButton() &&
       (
@@ -1132,10 +1104,6 @@ client.on(
 
       return;
     }
-
-    // =================================================
-    // أوامر السلاش
-    // =================================================
 
     if (!interaction.isChatInputCommand())
       return;
@@ -1403,13 +1371,10 @@ client.on(
       }
 
       task.submitted = true;
-
       task.submittedAt =
         new Date().toISOString();
-
       task.submittedBy =
         interaction.user.id;
-
       task.warned = true;
 
       player.points += 2;
@@ -1612,10 +1577,6 @@ client.on(
       const reason =
         interaction.options.getString("السبب");
 
-      // =================================================
-      // مبالغ الغرامات الجديدة
-      // =================================================
-
       const amounts = {
         "عدم انصياع للأوامر": 10000,
         "أشياء غير لائقة": 5000,
@@ -1651,10 +1612,6 @@ client.on(
       const deadline =
         createdAt + FINE_DURATION;
 
-      // =================================================
-      // حفظ الغرامة مع الرول الخاص بيها
-      // =================================================
-
       player.fines.push({
         id: fineId,
         reason,
@@ -1672,10 +1629,6 @@ client.on(
 
       saveData(data);
 
-      // =================================================
-      // إضافة رول الغرامة
-      // =================================================
-
       try {
 
         const member =
@@ -1684,10 +1637,7 @@ client.on(
           );
 
         if (fineRole) {
-
-          await member.roles.add(
-            fineRole
-          );
+          await member.roles.add(fineRole);
         }
 
       } catch (error) {
@@ -1741,7 +1691,8 @@ client.on(
         });
       }
 
-      const now = Date.now();
+      const now =
+        Date.now();
 
       const list =
         player.fines
@@ -1898,17 +1849,9 @@ client.on(
             interaction.user.id
           );
 
-        // =================================================
-        // الرول بيتحدد من سبب الغرامة
-        // =================================================
-
         const fineRole =
           fine.role ||
           FINE_ROLES[fine.reason];
-
-        // =================================================
-        // نشوف هل فيه غرامة تانية بنفس الرول
-        // =================================================
 
         const hasAnotherFine =
           player.fines.some(
@@ -2559,8 +2502,11 @@ async function dailyCheck() {
   const data =
     loadData();
 
+  const now =
+    new Date();
+
   const today =
-    egyptDate();
+    egyptDate(now);
 
   for (
     const guild
@@ -2666,14 +2612,14 @@ async function dailyCheck() {
       }
 
       // =================================================
-      // استثناء التاسكات بالرولات
+      // استثناء التاسكات
       // =================================================
 
       if (isTaskExcluded(member))
         continue;
 
       // =================================================
-      // التاسكات القديمة
+      // التاسكات + مهلة 4 ساعات
       // =================================================
 
       for (
@@ -2688,7 +2634,27 @@ async function dailyCheck() {
           continue;
         }
 
-        if (task.date !== today) {
+        /*
+         * التاسك بتاريخ 6 أكتوبر
+         * ينتهي يوم 6 أكتوبر الساعة 12:00 بالليل
+         * والمهلة الإضافية 4 ساعات
+         *
+         * يعني الـ Warn يبدأ من:
+         * 7 أكتوبر الساعة 04:00 صباحًا
+         */
+
+        const taskDeadline =
+          new Date(
+            `${task.date}T04:00:00+03:00`
+          );
+
+        taskDeadline.setDate(
+          taskDeadline.getDate() + 1
+        );
+
+        if (
+          now >= taskDeadline
+        ) {
 
           task.warned = true;
 
@@ -2755,3 +2721,4 @@ async function dailyCheck() {
 client.login(
   process.env.TOKEN
 );
+```
