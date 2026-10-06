@@ -37,6 +37,11 @@ const ABSENCE_WARN_ROLES = [
   "1550995580908605591",
   "1550995666036330607"
 ];
+// رولات مستثناة من نظام التاسكات والـWarn
+const EXCLUDED_TASK_ROLES = [
+  "1546134518463856760",
+  "1546140695314571304"
+];
 
 // =====================================================
 // ملف البيانات
@@ -1459,12 +1464,15 @@ async function dailyCheck() {
       // التاسكات القديمة غير المسلمة
       // =============================================
 
-      for (const task of player.tasks || []) {
+   for (const task of player.tasks || []) {
 
-        if (
-          task.submitted ||
-          task.warned
-        ) continue;
+  if (
+    task.submitted ||
+    task.warned ||
+    member.roles.cache.some(role =>
+      EXCLUDED_TASK_ROLES.includes(role.id)
+    )
+  ) continue;
 
         if (task.date !== today) {
 
