@@ -76,7 +76,7 @@ const FINE_ROLES = {
 const FINE_DURATION = 48 * 60 * 60 * 1000;
 
 // =====================================================
-// بيانات رسائل الحضور
+// بيانات لوحة الحضور
 // =====================================================
 
 const ATTENDANCE_PANEL_FILE = "./attendance_panel.json";
@@ -109,7 +109,7 @@ function saveAttendancePanel(data) {
 }
 
 // =====================================================
-// فحص الاستثناء الكامل
+// الاستثناء الكامل
 // =====================================================
 
 function isFullyExcluded(memberOrId) {
@@ -195,7 +195,7 @@ function daysBetween(date1, date2) {
 }
 
 // =====================================================
-// الرولات المستثناة من التاسكات
+// استثناء التاسكات
 // =====================================================
 
 function isExcluded(member) {
@@ -216,9 +216,7 @@ function isTaskExcluded(member) {
 // =====================================================
 
 function ensurePlayer(data, user) {
-
   if (!data[user.id]) {
-
     data[user.id] = {
       name: user.username,
       attendance: [],
@@ -266,9 +264,7 @@ function isAdmin(interaction) {
 // =====================================================
 
 async function updateAttendancePanel(guild, data = null) {
-
   try {
-
     const attendanceData =
       data || loadData();
 
@@ -280,27 +276,22 @@ async function updateAttendancePanel(guild, data = null) {
         ATTENDANCE_CHANNEL_ID
       );
 
-    if (!channel)
-      return;
+    if (!channel) return;
 
     let panelMessage = null;
 
     if (panelData.panelMessageId) {
-
       try {
-
         panelMessage =
           await channel.messages.fetch(
             panelData.panelMessageId
           );
-
       } catch {
         panelMessage = null;
       }
     }
 
     if (!panelMessage) {
-
       const embed =
         new EmbedBuilder()
           .setTitle("📋 لوحة الحاضرين")
@@ -326,16 +317,11 @@ async function updateAttendancePanel(guild, data = null) {
       const [userId, player]
       of Object.entries(attendanceData)
     ) {
-
-      if (
-        isFullyExcluded(userId)
-      ) {
+      if (isFullyExcluded(userId)) {
         continue;
       }
 
-      if (
-        player.presentToday === true
-      ) {
+      if (player.presentToday === true) {
         presentUsers.push(userId);
       }
     }
@@ -343,47 +329,29 @@ async function updateAttendancePanel(guild, data = null) {
     let description;
 
     if (presentUsers.length === 0) {
-
       description =
         "📭 **مفيش حد مسجل حضور حاليًا.**";
-
     } else {
-
       const membersList = [];
 
       for (const userId of presentUsers) {
-
-        try {
-
-          const member =
-            await guild.members.fetch(
-              userId
-            );
-
-          membersList.push(
-            "🟢 " + member
-          );
-
-        } catch {
-
-          membersList.push(
-            "🟢 <@" + userId + ">"
-          );
-        }
+        /*
+         * مهم:
+         * المنشن هنا مكتوب بالطريقة الصحيحة
+         * عشان Discord يعرض اسم العضو بدل الـID.
+         */
+        membersList.push(
+          `🟢 <@${userId}>`
+        );
       }
 
       description =
-        "👥 **عدد الحاضرين: " +
-        presentUsers.length +
-        "**\n\n" +
+        `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
         membersList.join("\n");
 
       if (description.length > 4000) {
-
         description =
-          "👥 **عدد الحاضرين: " +
-          presentUsers.length +
-          "**\n\n" +
+          `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
           membersList
             .slice(0, 100)
             .join("\n") +
@@ -404,9 +372,7 @@ async function updateAttendancePanel(guild, data = null) {
     await panelMessage.edit({
       embeds: [embed]
     });
-
   } catch (error) {
-
     console.log(
       "⚠️ خطأ في تحديث لوحة الحاضرين:",
       error.message
@@ -415,44 +381,35 @@ async function updateAttendancePanel(guild, data = null) {
 }
 
 // =====================================================
-// إنشاء رسالة الحضور والانصراف
+// إنشاء لوحة الحضور والانصراف
 // =====================================================
 
 async function setupAttendancePanel(guild) {
-
   try {
-
     const channel =
       await guild.channels.fetch(
         ATTENDANCE_CHANNEL_ID
       );
 
-    if (!channel)
-      return;
+    if (!channel) return;
 
     const panelData =
       loadAttendancePanel();
 
     let attendanceMessage = null;
 
-    if (
-      panelData.attendanceMessageId
-    ) {
-
+    if (panelData.attendanceMessageId) {
       try {
-
         attendanceMessage =
           await channel.messages.fetch(
             panelData.attendanceMessageId
           );
-
       } catch {
         attendanceMessage = null;
       }
     }
 
     if (!attendanceMessage) {
-
       const embed =
         new EmbedBuilder()
           .setTitle("🕐 تسجيل الحضور والانصراف")
@@ -472,7 +429,6 @@ async function setupAttendancePanel(guild) {
       const row =
         new ActionRowBuilder()
           .addComponents(
-
             new ButtonBuilder()
               .setCustomId(
                 "attendance_check_in"
@@ -510,12 +466,8 @@ async function setupAttendancePanel(guild) {
       saveAttendancePanel(panelData);
     }
 
-    await updateAttendancePanel(
-      guild
-    );
-
+    await updateAttendancePanel(guild);
   } catch (error) {
-
     console.log(
       "⚠️ خطأ في إنشاء نظام الحضور:",
       error.message
@@ -534,7 +486,6 @@ async function addWarn(
   reason,
   mainData = null
 ) {
-
   if (isFullyExcluded(userId)) {
     return false;
   }
@@ -543,7 +494,6 @@ async function addWarn(
     mainData || loadData();
 
   if (!data[userId]) {
-
     data[userId] = {
       name: "Unknown",
       attendance: [],
@@ -566,12 +516,9 @@ async function addWarn(
   let member;
 
   try {
-
     member =
       await guild.members.fetch(userId);
-
   } catch (error) {
-
     console.log(
       "⚠️ لم أستطع جلب العضو:",
       error.message
@@ -597,7 +544,6 @@ async function addWarn(
   let roleIds;
 
   if (type === "task") {
-
     player.taskWarns++;
 
     warnNumber =
@@ -608,9 +554,7 @@ async function addWarn(
 
     roleIds =
       TASK_WARN_ROLES;
-
   } else {
-
     player.absenceWarns++;
 
     warnNumber =
@@ -628,7 +572,6 @@ async function addWarn(
   saveData(data);
 
   try {
-
     if (!member) {
       member =
         await guild.members.fetch(userId);
@@ -639,11 +582,9 @@ async function addWarn(
     }
 
     for (const roleId of roleIds) {
-
       if (
         member.roles.cache.has(roleId)
       ) {
-
         await member.roles
           .remove(roleId)
           .catch(() => {});
@@ -654,14 +595,11 @@ async function addWarn(
       roleIds[warnNumber - 1];
 
     if (newRole) {
-
       await member.roles
         .add(newRole)
         .catch(() => {});
     }
-
   } catch (error) {
-
     console.log(
       "⚠️ لم أستطع تعديل رتبة الـWarn:",
       error.message
@@ -669,14 +607,12 @@ async function addWarn(
   }
 
   try {
-
     const channel =
       await guild.channels.fetch(
         WARN_CHANNEL_ID
       );
 
     if (channel) {
-
       const embed =
         new EmbedBuilder()
           .setTitle("⚠️ تحذير جديد")
@@ -697,9 +633,7 @@ async function addWarn(
         embeds: [embed]
       });
     }
-
   } catch (error) {
-
     console.log(
       "⚠️ لم أستطع إرسال الـWarn:",
       error.message
@@ -714,7 +648,6 @@ async function addWarn(
 // =====================================================
 
 const commands = [
-
   new SlashCommandBuilder()
     .setName("حضوراتي")
     .setDescription("عرض سجل حضورك"),
@@ -940,7 +873,6 @@ const commands = [
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
     )
-
 ].map(command => command.toJSON());
 
 // =====================================================
@@ -948,7 +880,6 @@ const commands = [
 // =====================================================
 
 client.once("ready", async () => {
-
   console.log(
     "البوت شغال باسم " +
     client.user.tag
@@ -959,12 +890,10 @@ client.once("ready", async () => {
       .setToken(process.env.TOKEN);
 
   try {
-
     for (
       const guild
       of client.guilds.cache.values()
     ) {
-
       await rest.put(
         Routes.applicationGuildCommands(
           client.user.id,
@@ -982,9 +911,7 @@ client.once("ready", async () => {
 
       await setupAttendancePanel(guild);
     }
-
   } catch (error) {
-
     console.error(
       "❌ خطأ في تسجيل الأوامر:",
       error
@@ -1007,6 +934,10 @@ client.on(
   "interactionCreate",
   async interaction => {
 
+    // =================================================
+    // أزرار الحضور والانصراف
+    // =================================================
+
     if (
       interaction.isButton() &&
       (
@@ -1016,17 +947,13 @@ client.on(
           "attendance_check_out"
       )
     ) {
-
       const data =
         loadData();
 
       const user =
         interaction.user;
 
-      if (
-        isFullyExcluded(user.id)
-      ) {
-
+      if (isFullyExcluded(user.id)) {
         return interaction.reply({
           content:
             "🚫 أنت مستثنى بالكامل من نظام البوت.",
@@ -1043,15 +970,13 @@ client.on(
       const today =
         egyptDate();
 
+      // تسجيل حضور
       if (
         interaction.customId ===
         "attendance_check_in"
       ) {
 
-        if (
-          player.presentToday
-        ) {
-
+        if (player.presentToday) {
           return interaction.reply({
             content:
               "⚠️ أنت مسجل حضور بالفعل.",
@@ -1065,7 +990,6 @@ client.on(
         if (
           !player.attendance.includes(today)
         ) {
-
           player.attendance.push(today);
         }
 
@@ -1087,15 +1011,13 @@ client.on(
         });
       }
 
+      // تسجيل انصراف
       if (
         interaction.customId ===
         "attendance_check_out"
       ) {
 
-        if (
-          !player.presentToday
-        ) {
-
+        if (!player.presentToday) {
           return interaction.reply({
             content:
               "⚠️ أنت مش مسجل حضور حاليًا.",
@@ -1140,7 +1062,6 @@ client.on(
       if (
         isFullyExcluded(interaction.user.id)
       ) {
-
         return interaction.reply({
           content:
             "🚫 أنت مستثنى بالكامل من نظام البوت.",
@@ -1156,7 +1077,6 @@ client.on(
         !player.attendance ||
         player.attendance.length === 0
       ) {
-
         return interaction.reply({
           content:
             "📋 مفيش سجل حضور ليك لسه.",
@@ -1195,7 +1115,6 @@ client.on(
     if (command === "الغيابات") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1226,7 +1145,6 @@ client.on(
           continue;
 
         if (!player.presentToday) {
-
           absent.push(
             `<@${member.id}>`
           );
@@ -1234,7 +1152,6 @@ client.on(
       }
 
       if (absent.length === 0) {
-
         return interaction.reply(
           "✅ مفيش أعضاء غائبين."
         );
@@ -1253,7 +1170,6 @@ client.on(
     if (command === "تاسك") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1262,7 +1178,9 @@ client.on(
       }
 
       const taskText =
-        interaction.options.getString("المهمة");
+        interaction.options.getString(
+          "المهمة"
+        );
 
       const members =
         await interaction.guild.members.fetch();
@@ -1279,7 +1197,6 @@ client.on(
           continue;
 
         if (isTaskExcluded(member)) {
-
           excluded++;
           continue;
         }
@@ -1323,7 +1240,6 @@ client.on(
     if (command === "تسليم") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1332,19 +1248,18 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       let member;
 
       try {
-
         member =
           await interaction.guild.members.fetch(
             user.id
           );
-
       } catch {
-
         return interaction.reply({
           content:
             "❌ مقدرتش أوصل للعضو.",
@@ -1353,7 +1268,6 @@ client.on(
       }
 
       if (isFullyExcluded(member)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -1362,7 +1276,6 @@ client.on(
       }
 
       if (isTaskExcluded(member)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى من نظام التاسكات.",
@@ -1371,7 +1284,10 @@ client.on(
       }
 
       const player =
-        ensurePlayer(data, user);
+        ensurePlayer(
+          data,
+          user
+        );
 
       const task =
         player.tasks.find(
@@ -1379,7 +1295,6 @@ client.on(
         );
 
       if (!task) {
-
         return interaction.reply({
           content:
             `❌ مفيش تاسك معلق على ${user}.`,
@@ -1413,9 +1328,10 @@ client.on(
     if (command === "تاسكاتي") {
 
       if (
-        isFullyExcluded(interaction.user.id)
+        isFullyExcluded(
+          interaction.user.id
+        )
       ) {
-
         return interaction.reply({
           content:
             "🚫 أنت مستثنى بالكامل من نظام البوت.",
@@ -1426,19 +1342,16 @@ client.on(
       let member;
 
       try {
-
         member =
           await interaction.guild.members.fetch(
             interaction.user.id
           );
-
       } catch {}
 
       if (
         member &&
         isTaskExcluded(member)
       ) {
-
         return interaction.reply({
           content:
             "🚫 أنت مستثنى من نظام التاسكات.",
@@ -1454,7 +1367,6 @@ client.on(
         !player.tasks ||
         player.tasks.length === 0
       ) {
-
         return interaction.reply({
           content:
             "📋 مفيش تاسكات ليك.",
@@ -1491,7 +1403,6 @@ client.on(
     if (command === "التاسكات") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1506,9 +1417,8 @@ client.on(
         of Object.entries(data)
       ) {
 
-        if (
-          isFullyExcluded(id)
-        ) continue;
+        if (isFullyExcluded(id))
+          continue;
 
         if (!player.tasks)
           continue;
@@ -1516,10 +1426,10 @@ client.on(
         let member;
 
         try {
-
           member =
-            await interaction.guild.members.fetch(id);
-
+            await interaction.guild.members.fetch(
+              id
+            );
         } catch {
           continue;
         }
@@ -1547,7 +1457,6 @@ client.on(
       }
 
       if (!text) {
-
         return interaction.reply(
           "✅ مفيش تاسكات معلقة."
         );
@@ -1555,7 +1464,9 @@ client.on(
 
       const embed =
         new EmbedBuilder()
-          .setTitle("📋 التاسكات المعلقة")
+          .setTitle(
+            "📋 التاسكات المعلقة"
+          )
           .setDescription(text)
           .setTimestamp();
 
@@ -1571,7 +1482,6 @@ client.on(
     if (command === "غرامة") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1580,10 +1490,11 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت، ومينفعش تتحط عليه غرامة.",
@@ -1592,7 +1503,9 @@ client.on(
       }
 
       const reason =
-        interaction.options.getString("السبب");
+        interaction.options.getString(
+          "السبب"
+        );
 
       const amounts = {
         "عدم انصياع للأوامر": 10000,
@@ -1606,7 +1519,6 @@ client.on(
         amounts[reason];
 
       if (!amount) {
-
         return interaction.reply({
           content:
             "❌ مبلغ الغرامة غير صحيح.",
@@ -1618,7 +1530,10 @@ client.on(
         FINE_ROLES[reason];
 
       const player =
-        ensurePlayer(data, user);
+        ensurePlayer(
+          data,
+          user
+        );
 
       const fineId =
         player.fines.length + 1;
@@ -1627,7 +1542,8 @@ client.on(
         Date.now();
 
       const deadline =
-        createdAt + FINE_DURATION;
+        createdAt +
+        FINE_DURATION;
 
       player.fines.push({
         id: fineId,
@@ -1647,18 +1563,17 @@ client.on(
       saveData(data);
 
       try {
-
         const member =
           await interaction.guild.members.fetch(
             user.id
           );
 
         if (fineRole) {
-          await member.roles.add(fineRole);
+          await member.roles.add(
+            fineRole
+          );
         }
-
       } catch (error) {
-
         console.log(
           "⚠️ لم أستطع إضافة رول الغرامة:",
           error.message
@@ -1682,9 +1597,10 @@ client.on(
     if (command === "غراماتي") {
 
       if (
-        isFullyExcluded(interaction.user.id)
+        isFullyExcluded(
+          interaction.user.id
+        )
       ) {
-
         return interaction.reply({
           content:
             "🚫 أنت مستثنى بالكامل من نظام البوت.",
@@ -1700,7 +1616,6 @@ client.on(
         !player.fines ||
         player.fines.length === 0
       ) {
-
         return interaction.reply({
           content:
             "✅ مفيش غرامات عليك.",
@@ -1717,39 +1632,38 @@ client.on(
           .map((fine, index) => {
 
             const id =
-              fine.id || index + 1;
-
-            const paid =
-              fine.paid === true;
+              fine.id ||
+              index + 1;
 
             let status;
 
-            if (paid) {
-
-              status = "✅ مدفوعة";
-
+            if (
+              fine.paid === true
+            ) {
+              status =
+                "✅ مدفوعة";
             } else if (
               fine.deadline &&
               now >= fine.deadline
             ) {
-
-              status = "🔴 متأخرة";
-
-            } else if (fine.deadline) {
-
+              status =
+                "🔴 متأخرة";
+            } else if (
+              fine.deadline
+            ) {
               const remaining =
-                fine.deadline - now;
+                fine.deadline -
+                now;
 
               const hours =
                 Math.ceil(
-                  remaining / 3600000
+                  remaining /
+                  3600000
                 );
 
               status =
                 `⏳ باقي ${hours} ساعة`;
-
             } else {
-
               status =
                 "⏳ غير مدفوعة";
             }
@@ -1766,7 +1680,8 @@ client.on(
 
       const unpaid =
         player.fines.filter(
-          fine => fine.paid !== true
+          fine =>
+            fine.paid !== true
         );
 
       const total =
@@ -1802,12 +1717,15 @@ client.on(
     // دفع الغرامة
     // =================================================
 
-    if (command === "دفع_الغرامة") {
+    if (
+      command === "دفع_الغرامة"
+    ) {
 
       if (
-        isFullyExcluded(interaction.user.id)
+        isFullyExcluded(
+          interaction.user.id
+        )
       ) {
-
         return interaction.reply({
           content:
             "🚫 أنت مستثنى بالكامل من نظام البوت.",
@@ -1816,7 +1734,9 @@ client.on(
       }
 
       const number =
-        interaction.options.getInteger("رقم");
+        interaction.options.getInteger(
+          "رقم"
+        );
 
       const player =
         data[interaction.user.id];
@@ -1826,7 +1746,6 @@ client.on(
         !player.fines ||
         player.fines.length === 0
       ) {
-
         return interaction.reply({
           content:
             "✅ مفيش غرامات عليك.",
@@ -1839,14 +1758,15 @@ client.on(
           (f, index) =>
             (
               f.id === number ||
-              (!f.id &&
-                index + 1 === number)
+              (
+                !f.id &&
+                index + 1 === number
+              )
             ) &&
             f.paid !== true
         );
 
       if (!fine) {
-
         return interaction.reply({
           content:
             "❌ الغرامة دي مش موجودة أو اتدفعت بالفعل.",
@@ -1855,12 +1775,12 @@ client.on(
       }
 
       fine.paid = true;
-      fine.paidAt = Date.now();
+      fine.paidAt =
+        Date.now();
 
       saveData(data);
 
       try {
-
         const member =
           await interaction.guild.members.fetch(
             interaction.user.id
@@ -1884,16 +1804,15 @@ client.on(
         if (
           fineRole &&
           !hasAnotherFine &&
-          member.roles.cache.has(fineRole)
+          member.roles.cache.has(
+            fineRole
+          )
         ) {
-
           await member.roles.remove(
             fineRole
           );
         }
-
       } catch (error) {
-
         console.log(
           "⚠️ لم أستطع إزالة رول الغرامة:",
           error.message
@@ -1912,10 +1831,11 @@ client.on(
     // غرامات العضو
     // =================================================
 
-    if (command === "غرامات_العضو") {
+    if (
+      command === "غرامات_العضو"
+    ) {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1924,7 +1844,9 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       const player =
         data[user.id];
@@ -1934,7 +1856,6 @@ client.on(
         !player.fines ||
         player.fines.length === 0
       ) {
-
         return interaction.reply(
           `✅ ${user} مفيش عليه غرامات.`
         );
@@ -1946,7 +1867,8 @@ client.on(
       const total =
         player.fines
           .filter(
-            fine => fine.paid !== true
+            fine =>
+              fine.paid !== true
           )
           .reduce(
             (sum, fine) =>
@@ -1959,24 +1881,25 @@ client.on(
           .map((fine, index) => {
 
             const id =
-              fine.id || index + 1;
+              fine.id ||
+              index + 1;
 
             let status;
 
-            if (fine.paid === true) {
-
-              status = "✅ مدفوعة";
-
+            if (
+              fine.paid === true
+            ) {
+              status =
+                "✅ مدفوعة";
             } else if (
               fine.deadline &&
               now >= fine.deadline
             ) {
-
-              status = "🔴 متأخرة";
-
+              status =
+                "🔴 متأخرة";
             } else {
-
-              status = "⏳ غير مدفوعة";
+              status =
+                "⏳ غير مدفوعة";
             }
 
             return (
@@ -2002,7 +1925,6 @@ client.on(
     if (command === "تحذير") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2011,10 +1933,11 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت، ومينفعش ياخد Warn.",
@@ -2023,7 +1946,9 @@ client.on(
       }
 
       const reason =
-        interaction.options.getString("السبب");
+        interaction.options.getString(
+          "السبب"
+        );
 
       const result =
         await addWarn(
@@ -2035,7 +1960,6 @@ client.on(
         );
 
       if (!result) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى من الـWarn.",
@@ -2056,7 +1980,6 @@ client.on(
     if (command === "ترقية") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2065,10 +1988,11 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2077,7 +2001,9 @@ client.on(
       }
 
       const role =
-        interaction.options.getRole("الرتبة");
+        interaction.options.getRole(
+          "الرتبة"
+        );
 
       const member =
         await interaction.guild.members.fetch(
@@ -2085,11 +2011,10 @@ client.on(
         );
 
       try {
-
-        await member.roles.add(role.id);
-
+        await member.roles.add(
+          role.id
+        );
       } catch {
-
         return interaction.reply({
           content:
             "❌ مقدرتش أضيف الرتبة. تأكد إن رتبة البوت أعلى منها.",
@@ -2109,7 +2034,6 @@ client.on(
     if (command === "تنزيل") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2118,10 +2042,11 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2130,7 +2055,9 @@ client.on(
       }
 
       const role =
-        interaction.options.getRole("الرتبة");
+        interaction.options.getRole(
+          "الرتبة"
+        );
 
       const member =
         await interaction.guild.members.fetch(
@@ -2138,11 +2065,10 @@ client.on(
         );
 
       try {
-
-        await member.roles.add(role.id);
-
+        await member.roles.add(
+          role.id
+        );
       } catch {
-
         return interaction.reply({
           content:
             "❌ مقدرتش أغير الرتبة.",
@@ -2162,7 +2088,6 @@ client.on(
     if (command === "اجازة") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2171,10 +2096,11 @@ client.on(
       }
 
       const user =
-        interaction.options.getUser("العضو");
+        interaction.options.getUser(
+          "العضو"
+        );
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2183,10 +2109,15 @@ client.on(
       }
 
       const days =
-        interaction.options.getInteger("الأيام");
+        interaction.options.getInteger(
+          "الأيام"
+        );
 
       const player =
-        ensurePlayer(data, user);
+        ensurePlayer(
+          data,
+          user
+        );
 
       const start =
         new Date();
@@ -2219,11 +2150,12 @@ client.on(
     if (command === "نقاط") {
 
       const user =
-        interaction.options.getUser("العضو") ||
+        interaction.options.getUser(
+          "العضو"
+        ) ||
         interaction.user;
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2263,7 +2195,6 @@ client.on(
           );
 
       if (players.length === 0) {
-
         return interaction.reply(
           "📊 مفيش بيانات لسه."
         );
@@ -2280,7 +2211,9 @@ client.on(
 
       const embed =
         new EmbedBuilder()
-          .setTitle("🏆 ترتيب النقاط")
+          .setTitle(
+            "🏆 ترتيب النقاط"
+          )
           .setDescription(text)
           .setTimestamp();
 
@@ -2296,11 +2229,12 @@ client.on(
     if (command === "احصائيات") {
 
       const user =
-        interaction.options.getUser("العضو") ||
+        interaction.options.getUser(
+          "العضو"
+        ) ||
         interaction.user;
 
       if (isFullyExcluded(user.id)) {
-
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2312,7 +2246,6 @@ client.on(
         data[user.id];
 
       if (!player) {
-
         return interaction.reply(
           "❌ مفيش بيانات للعضو."
         );
@@ -2321,21 +2254,24 @@ client.on(
       const completedTasks =
         (player.tasks || [])
           .filter(
-            task => task.submitted
+            task =>
+              task.submitted
           )
           .length;
 
       const pendingTasks =
         (player.tasks || [])
           .filter(
-            task => !task.submitted
+            task =>
+              !task.submitted
           )
           .length;
 
       const totalFines =
         (player.fines || [])
           .filter(
-            fine => fine.paid !== true
+            fine =>
+              fine.paid !== true
           )
           .reduce(
             (sum, fine) =>
@@ -2356,31 +2292,36 @@ client.on(
               inline: true
             },
             {
-              name: "📋 التاسكات المسلمة",
+              name:
+                "📋 التاسكات المسلمة",
               value:
                 `${completedTasks}`,
               inline: true
             },
             {
-              name: "📋 التاسكات المعلقة",
+              name:
+                "📋 التاسكات المعلقة",
               value:
                 `${pendingTasks}`,
               inline: true
             },
             {
-              name: "⚠️ Warn التاسكات",
+              name:
+                "⚠️ Warn التاسكات",
               value:
                 `${player.taskWarns}`,
               inline: true
             },
             {
-              name: "⚠️ Warn الغياب",
+              name:
+                "⚠️ Warn الغياب",
               value:
                 `${player.absenceWarns}`,
               inline: true
             },
             {
-              name: "💰 الغرامات",
+              name:
+                "💰 الغرامات",
               value:
                 `${totalFines.toLocaleString()} جنيه`,
               inline: true
@@ -2406,7 +2347,6 @@ client.on(
     if (command === "تقرير") {
 
       if (!isAdmin(interaction)) {
-
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2433,7 +2373,6 @@ client.on(
         }
 
         try {
-
           const member =
             await interaction.guild.members.fetch(
               userId
@@ -2453,7 +2392,6 @@ client.on(
               }
             }
           }
-
         } catch {}
 
         for (
@@ -2472,30 +2410,41 @@ client.on(
 
       const embed =
         new EmbedBuilder()
-          .setTitle("📋 التقرير العام")
+          .setTitle(
+            "📋 التقرير العام"
+          )
           .addFields(
             {
-              name: "🟢 الحضور اليوم",
-              value: `${attendance}`,
+              name:
+                "🟢 الحضور اليوم",
+              value:
+                `${attendance}`,
               inline: true
             },
             {
-              name: "✅ التاسكات المسلمة",
-              value: `${tasks}`,
+              name:
+                "✅ التاسكات المسلمة",
+              value:
+                `${tasks}`,
               inline: true
             },
             {
-              name: "❌ التاسكات المعلقة",
-              value: `${pending}`,
+              name:
+                "❌ التاسكات المعلقة",
+              value:
+                `${pending}`,
               inline: true
             },
             {
-              name: "⚠️ إجمالي التحذيرات",
-              value: `${warns}`,
+              name:
+                "⚠️ إجمالي التحذيرات",
+              value:
+                `${warns}`,
               inline: true
             },
             {
-              name: "💰 الغرامات غير المدفوعة",
+              name:
+                "💰 الغرامات غير المدفوعة",
               value:
                 `${fines.toLocaleString()} جنيه`,
               inline: true
@@ -2525,7 +2474,6 @@ async function dailyCheck() {
   const today =
     egyptDate(now);
 
-  // الساعة الحالية في مصر
   const currentEgyptHour =
     egyptHour(now);
 
@@ -2537,12 +2485,9 @@ async function dailyCheck() {
     let members;
 
     try {
-
       members =
         await guild.members.fetch();
-
     } catch {
-
       continue;
     }
 
@@ -2593,7 +2538,6 @@ async function dailyCheck() {
           current >= start &&
           current <= end
         ) {
-
           onVacation = true;
           break;
         }
@@ -2643,21 +2587,6 @@ async function dailyCheck() {
       // التاسكات + مهلة 4 ساعات
       // =================================================
 
-      /*
-       * مثال:
-       *
-       * التاسك اتعمل يوم 6 أكتوبر.
-       *
-       * اليوم الجديد يبدأ:
-       * 7 أكتوبر الساعة 12:00 منتصف الليل.
-       *
-       * فترة السماح:
-       * من 12:00 لحد 04:00 صباحًا.
-       *
-       * بعد 04:00 صباحًا:
-       * يتم إعطاء Warn للتاسك غير المسلم.
-       */
-
       if (currentEgyptHour >= 4) {
 
         for (
@@ -2672,10 +2601,7 @@ async function dailyCheck() {
             continue;
           }
 
-          // لازم يكون التاسك من يوم سابق
-          if (
-            task.date !== today
-          ) {
+          if (task.date !== today) {
 
             task.warned = true;
 
