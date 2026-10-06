@@ -1091,6 +1091,84 @@ client.on(
         ephemeral: true
       });
     }
+    // ===================================================
+// دفع الغرامة
+// ===================================================
+
+if (command === "دفع_الغرامة") {
+
+  const number =
+    interaction.options.getInteger("رقم");
+
+  const player =
+    data[interaction.user.id];
+
+  if (
+    !player ||
+    !player.fines ||
+    player.fines.length === 0
+  ) {
+    return interaction.reply({
+      content: "✅ مفيش غرامات عليك.",
+      ephemeral: true
+    });
+  }
+
+  const fine =
+    player.fines.find(
+      (f, index) =>
+        (f.id === number || index + 1 === number) &&
+        f.paid !== true
+    );
+
+  if (!fine) {
+    return interaction.reply({
+      content:
+        "❌ الغرامة دي مش موجودة أو اتدفعت بالفعل.",
+      ephemeral: true
+    });
+  }
+
+  fine.paid = true;
+  fine.paidAt = Date.now();
+
+  saveData(data);
+
+  // شيل رول الغرامة لو مفيش غرامة تانية بنفس المبلغ
+  try {
+    const member =
+      await interaction.guild.members.fetch(
+        interaction.user.id
+      );
+
+    const fineRole =
+      FINE_ROLES[fine.amount];
+
+    const hasAnotherFine =
+      player.fines.some(
+        f =>
+          f !== fine &&
+          f.paid !== true &&
+          f.amount === fine.amount
+      );
+
+    if (fineRole && !hasAnotherFine) {
+      await member.roles.remove(fineRole).catch(() => {});
+    }
+  } catch (error) {
+    console.log(
+      "⚠️ لم أستطع إزالة رول الغرامة:",
+      error.message
+    );
+  }
+
+  return interaction.reply(
+    `✅ **تم دفع الغرامة #${fine.id} بنجاح**\n\n` +
+    `💵 المبلغ: **${fine.amount.toLocaleString()} جنيه**\n` +
+    `📝 السبب: **${fine.reason}**\n` +
+    `💳 الحالة: **مدفوعة**`
+  );
+}
 
     // ===================================================
     // غرامات العضو
