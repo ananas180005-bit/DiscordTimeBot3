@@ -195,6 +195,238 @@ function daysBetween(date1, date2) {
 }
 
 // =====================================================
+// تحويل الثواني لوقت مفهوم
+// =====================================================
+
+function formatPlayTime(totalSeconds = 0) {
+  totalSeconds = Math.max(
+    0,
+    Math.floor(Number(totalSeconds) || 0)
+  );
+
+  const hours =
+    Math.floor(totalSeconds / 3600);
+
+  const minutes =
+    Math.floor((totalSeconds % 3600) / 60);
+
+  const seconds =
+    totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}س ${minutes}د`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}د ${seconds}ث`;
+  }
+
+  return `${seconds}ث`;
+}
+
+// =====================================================
+// وقت اللعب المحفوظ لليوم
+// =====================================================
+
+function getSavedDailyPlayTime(player, date = egyptDate()) {
+  if (!player) return 0;
+
+  // النظام الجديد
+  if (
+    player.playTimeByDate &&
+    typeof player.playTimeByDate === "object"
+  ) {
+    return Number(
+      player.playTimeByDate[date] || 0
+    );
+  }
+
+  // توافق مع أي بيانات قديمة
+  if (
+    player.dailyPlayTimeDate === date &&
+    player.dailyPlayTimeSeconds
+  ) {
+    return Number(
+      player.dailyPlayTimeSeconds
+    );
+  }
+
+  return 0;
+}
+
+// =====================================================
+// وقت اللعب الحالي لليوم
+// =====================================================
+
+function getCurrentDailyPlayTime(
+  player,
+  date = egyptDate()
+) {
+  let total =
+    getSavedDailyPlayTime(
+      player,
+      date
+    );
+
+  if (
+    player?.presentToday &&
+    player.attendanceStartedAt
+  ) {
+    const startedAt =
+      new Date(
+        player.attendanceStartedAt
+      ).getTime();
+
+    if (!Number.isNaN(startedAt)) {
+      const now =
+        Date.now();
+
+      const extra =
+        Math.max(
+          0,
+          Math.floor(
+            (now - startedAt) / 1000
+          )
+        );
+
+      total += extra;
+    }
+  }
+
+  return total;
+}
+
+// =====================================================
+// إجمالي وقت اللعب
+// =====================================================
+
+function getTotalPlayTime(player) {
+  if (!player) return 0;
+
+  let total =
+    Number(
+      player.totalPlayTimeSeconds || 0
+    );
+
+  // لو فيه جلسة حالية مفتوحة
+  if (
+    player.presentToday &&
+    player.attendanceStartedAt
+  ) {
+    const startedAt =
+      new Date(
+        player.attendanceStartedAt
+      ).getTime();
+
+    if (!Number.isNaN(startedAt)) {
+      total += Math.max(
+        0,
+        Math.floor(
+          (Date.now() - startedAt) /
+          1000
+        )
+      );
+    }
+  }
+
+  return total;
+}
+
+// =====================================================
+// إضافة وقت لعب
+// =====================================================
+
+function addPlayTime(
+  player,
+  date,
+  seconds
+) {
+  seconds =
+    Math.max(
+      0,
+      Math.floor(
+        Number(seconds) || 0
+      )
+    );
+
+  if (!player.playTimeByDate) {
+    player.playTimeByDate = {};
+  }
+
+  player.playTimeByDate[date] =
+    Number(
+      player.playTimeByDate[date] || 0
+    ) + seconds;
+
+  player.totalPlayTimeSeconds =
+    Number(
+      player.totalPlayTimeSeconds || 0
+    ) + seconds;
+
+  player.dailyPlayTimeDate = date;
+
+  player.dailyPlayTimeSeconds =
+    Number(
+      player.playTimeByDate[date] || 0
+    );
+}
+
+// =====================================================
+// إغلاق جلسة الحضور
+// =====================================================
+
+function closeAttendanceSession(
+  player,
+  endDate = egyptDate()
+) {
+  if (
+    !player.presentToday ||
+    !player.attendanceStartedAt
+  ) {
+    return 0;
+  }
+
+  const startTime =
+    new Date(
+      player.attendanceStartedAt
+    ).getTime();
+
+  const endTime =
+    Date.now();
+
+  if (Number.isNaN(startTime)) {
+    player.attendanceStartedAt =
+      null;
+
+    player.presentToday = false;
+
+    return 0;
+  }
+
+  const seconds =
+    Math.max(
+      0,
+      Math.floor(
+        (endTime - startTime) /
+        1000
+      )
+    );
+
+  addPlayTime(
+    player,
+    endDate,
+    seconds
+  );
+
+  player.attendanceStartedAt =
+    null;
+
+  player.presentToday = false;
+
+  return seconds;
+}
+
+// =====================================================
 // استثناء التاسكات
 // =====================================================
 
@@ -219,9 +451,18 @@ function ensurePlayer(data, user) {
   if (!data[user.id]) {
     data[user.id] = {
       name: user.username,
+
       attendance: [],
       lastAttendance: null,
       presentToday: false,
+
+      // نظام وقت اللعب
+      attendanceStartedAt: null,
+      playTimeByDate: {},
+      totalPlayTimeSeconds: 0,
+      dailyPlayTimeDate: null,
+      dailyPlayTimeSeconds: 0,
+
       tasks: [],
       taskWarns: 0,
       absenceWarns: 0,
@@ -237,14 +478,44 @@ function ensurePlayer(data, user) {
   const player = data[user.id];
 
   player.name = user.username;
+
   player.attendance ||= [];
   player.tasks ||= [];
   player.fines ||= [];
   player.vacations ||= [];
+
   player.taskWarns ||= 0;
   player.absenceWarns ||= 0;
   player.totalWarns ||= 0;
   player.points ||= 0;
+
+  // ===================================================
+  // تحويل بيانات الأعضاء القديمة للنظام الجديد
+  // ===================================================
+
+  player.playTimeByDate ||= {};
+
+  player.totalPlayTimeSeconds =
+    Number(
+      player.totalPlayTimeSeconds || 0
+    );
+
+  player.dailyPlayTimeSeconds =
+    Number(
+      player.dailyPlayTimeSeconds || 0
+    );
+
+  if (
+    player.dailyPlayTimeDate === undefined
+  ) {
+    player.dailyPlayTimeDate = null;
+  }
+
+  if (
+    player.attendanceStartedAt === undefined
+  ) {
+    player.attendanceStartedAt = null;
+  }
 
   return player;
 }
@@ -263,7 +534,10 @@ function isAdmin(interaction) {
 // تحديث لوحة الحاضرين
 // =====================================================
 
-async function updateAttendancePanel(guild, data = null) {
+async function updateAttendancePanel(
+  guild,
+  data = null
+) {
   try {
     const attendanceData =
       data || loadData();
@@ -308,35 +582,56 @@ async function updateAttendancePanel(guild, data = null) {
       panelData.panelMessageId =
         panelMessage.id;
 
-      saveAttendancePanel(panelData);
+      saveAttendancePanel(
+        panelData
+      );
     }
 
     const presentUsers = [];
 
     for (
       const [userId, player]
-      of Object.entries(attendanceData)
+      of Object.entries(
+        attendanceData
+      )
     ) {
-      if (isFullyExcluded(userId)) {
+      if (
+        isFullyExcluded(userId)
+      ) {
         continue;
       }
 
-      if (player.presentToday === true) {
+      if (
+        player.presentToday === true
+      ) {
         presentUsers.push(userId);
       }
     }
 
     let description;
 
-    if (presentUsers.length === 0) {
+    if (
+      presentUsers.length === 0
+    ) {
       description =
         "📭 **مفيش حد مسجل حضور حاليًا.**";
     } else {
       const membersList = [];
 
-      for (const userId of presentUsers) {
+      for (
+        const userId
+        of presentUsers
+      ) {
+        const player =
+          attendanceData[userId];
+
+        const playSeconds =
+          getCurrentDailyPlayTime(
+            player
+          );
+
         membersList.push(
-          `🟢 <@${userId}>`
+          `🟢 <@${userId}> — ⏱️ **${formatPlayTime(playSeconds)}**`
         );
       }
 
@@ -344,7 +639,9 @@ async function updateAttendancePanel(guild, data = null) {
         `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
         membersList.join("\n");
 
-      if (description.length > 4000) {
+      if (
+        description.length > 4000
+      ) {
         description =
           `👥 **عدد الحاضرين: ${presentUsers.length}**\n\n` +
           membersList
@@ -360,13 +657,14 @@ async function updateAttendancePanel(guild, data = null) {
         .setDescription(description)
         .setFooter({
           text:
-            "تتحدث اللوحة تلقائيًا مع تسجيل الحضور والانصراف"
+            "⏱️ الوقت بيتحدث تلقائيًا أثناء الحضور"
         })
         .setTimestamp();
 
     await panelMessage.edit({
       embeds: [embed]
     });
+
   } catch (error) {
     console.log(
       "⚠️ خطأ في تحديث لوحة الحاضرين:",
@@ -379,7 +677,9 @@ async function updateAttendancePanel(guild, data = null) {
 // إنشاء لوحة الحضور والانصراف
 // =====================================================
 
-async function setupAttendancePanel(guild) {
+async function setupAttendancePanel(
+  guild
+) {
   try {
     const channel =
       await guild.channels.fetch(
@@ -393,7 +693,9 @@ async function setupAttendancePanel(guild) {
 
     let attendanceMessage = null;
 
-    if (panelData.attendanceMessageId) {
+    if (
+      panelData.attendanceMessageId
+    ) {
       try {
         attendanceMessage =
           await channel.messages.fetch(
@@ -407,13 +709,16 @@ async function setupAttendancePanel(guild) {
     if (!attendanceMessage) {
       const embed =
         new EmbedBuilder()
-          .setTitle("🕐 تسجيل الحضور والانصراف")
+          .setTitle(
+            "🕐 تسجيل الحضور والانصراف"
+          )
           .setDescription(
             "اضغط على الزر المناسب لتسجيل حالتك.\n\n" +
             "🟢 **تسجيل حضور**\n" +
             "سجل حضورك واسمك هيظهر في لوحة الحاضرين.\n\n" +
             "🔴 **تسجيل انصراف**\n" +
-            "سجل انصرافك واسمك هيتشال من لوحة الحاضرين."
+            "سجل انصرافك واسمك هيتشال من لوحة الحاضرين.\n\n" +
+            "⏱️ **وقت اللعب بيتحسب تلقائيًا من وقت الحضور للانصراف.**"
           )
           .setFooter({
             text:
@@ -458,10 +763,15 @@ async function setupAttendancePanel(guild) {
       panelData.attendanceMessageId =
         attendanceMessage.id;
 
-      saveAttendancePanel(panelData);
+      saveAttendancePanel(
+        panelData
+      );
     }
 
-    await updateAttendancePanel(guild);
+    await updateAttendancePanel(
+      guild
+    );
+
   } catch (error) {
     console.log(
       "⚠️ خطأ في إنشاء نظام الحضور:",
@@ -481,7 +791,9 @@ async function addWarn(
   reason,
   mainData = null
 ) {
-  if (isFullyExcluded(userId)) {
+  if (
+    isFullyExcluded(userId)
+  ) {
     return false;
   }
 
@@ -494,6 +806,11 @@ async function addWarn(
       attendance: [],
       lastAttendance: null,
       presentToday: false,
+      attendanceStartedAt: null,
+      playTimeByDate: {},
+      totalPlayTimeSeconds: 0,
+      dailyPlayTimeDate: null,
+      dailyPlayTimeSeconds: 0,
       tasks: [],
       taskWarns: 0,
       absenceWarns: 0,
@@ -506,13 +823,16 @@ async function addWarn(
     };
   }
 
-  const player = data[userId];
+  const player =
+    data[userId];
 
   let member;
 
   try {
     member =
-      await guild.members.fetch(userId);
+      await guild.members.fetch(
+        userId
+      );
   } catch (error) {
     console.log(
       "⚠️ لم أستطع جلب العضو:",
@@ -538,7 +858,9 @@ async function addWarn(
   let warnNumber;
   let roleIds;
 
-  if (type === "task") {
+  if (
+    type === "task"
+  ) {
     player.taskWarns++;
 
     warnNumber =
@@ -549,6 +871,7 @@ async function addWarn(
 
     roleIds =
       TASK_WARN_ROLES;
+
   } else {
     player.absenceWarns++;
 
@@ -569,16 +892,25 @@ async function addWarn(
   try {
     if (!member) {
       member =
-        await guild.members.fetch(userId);
+        await guild.members.fetch(
+          userId
+        );
     }
 
-    if (isFullyExcluded(member)) {
+    if (
+      isFullyExcluded(member)
+    ) {
       return false;
     }
 
-    for (const roleId of roleIds) {
+    for (
+      const roleId
+      of roleIds
+    ) {
       if (
-        member.roles.cache.has(roleId)
+        member.roles.cache.has(
+          roleId
+        )
       ) {
         await member.roles
           .remove(roleId)
@@ -587,13 +919,16 @@ async function addWarn(
     }
 
     const newRole =
-      roleIds[warnNumber - 1];
+      roleIds[
+        warnNumber - 1
+      ];
 
     if (newRole) {
       await member.roles
         .add(newRole)
         .catch(() => {});
     }
+
   } catch (error) {
     console.log(
       "⚠️ لم أستطع تعديل رتبة الـWarn:",
@@ -610,7 +945,9 @@ async function addWarn(
     if (channel) {
       const embed =
         new EmbedBuilder()
-          .setTitle("⚠️ تحذير جديد")
+          .setTitle(
+            "⚠️ تحذير جديد"
+          )
           .setDescription(
             `<@${userId}>\n\n` +
             `📌 النوع: **${
@@ -624,10 +961,12 @@ async function addWarn(
           .setTimestamp();
 
       await channel.send({
-        content: `<@${userId}>`,
+        content:
+          `<@${userId}>`,
         embeds: [embed]
       });
     }
+
   } catch (error) {
     console.log(
       "⚠️ لم أستطع إرسال الـWarn:",
@@ -645,23 +984,32 @@ async function addWarn(
 const commands = [
   new SlashCommandBuilder()
     .setName("حضوراتي")
-    .setDescription("عرض سجل حضورك"),
+    .setDescription(
+      "عرض سجل حضورك"
+    ),
 
   new SlashCommandBuilder()
     .setName("الغيابات")
-    .setDescription("عرض الغائبين")
+    .setDescription(
+      "عرض الغائبين"
+    )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
     ),
 
   new SlashCommandBuilder()
     .setName("تاسك")
-    .setDescription("إضافة تاسك لجميع الأعضاء")
-    .addStringOption(option =>
-      option
-        .setName("المهمة")
-        .setDescription("وصف التاسك")
-        .setRequired(true)
+    .setDescription(
+      "إضافة تاسك لجميع الأعضاء"
+    )
+    .addStringOption(
+      option =>
+        option
+          .setName("المهمة")
+          .setDescription(
+            "وصف التاسك"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -669,12 +1017,17 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("تسليم")
-    .setDescription("تسجيل تسليم تاسك لعضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "تسجيل تسليم تاسك لعضو"
+    )
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -682,51 +1035,73 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("تاسكاتي")
-    .setDescription("عرض التاسكات الخاصة بك"),
+    .setDescription(
+      "عرض التاسكات الخاصة بك"
+    ),
 
   new SlashCommandBuilder()
     .setName("التاسكات")
-    .setDescription("عرض جميع التاسكات")
+    .setDescription(
+      "عرض جميع التاسكات"
+    )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
     ),
 
   new SlashCommandBuilder()
     .setName("غرامة")
-    .setDescription("إضافة غرامة لعضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "إضافة غرامة لعضو"
     )
-    .addStringOption(option =>
-      option
-        .setName("السبب")
-        .setDescription("سبب الغرامة")
-        .setRequired(true)
-        .addChoices(
-          {
-            name: "عدم انصياع للأوامر — 10,000",
-            value: "عدم انصياع للأوامر"
-          },
-          {
-            name: "أشياء غير لائقة — 5,000",
-            value: "أشياء غير لائقة"
-          },
-          {
-            name: "التأخير عن مهمة — 5,000",
-            value: "التأخير عن مهمة"
-          },
-          {
-            name: "الغياب بدون إذن — 20,000",
-            value: "الغياب بدون إذن"
-          },
-          {
-            name: "مخالفة قوانين العصابة — 30,000",
-            value: "مخالفة قوانين العصابة"
-          }
-        )
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
+    )
+    .addStringOption(
+      option =>
+        option
+          .setName("السبب")
+          .setDescription(
+            "سبب الغرامة"
+          )
+          .setRequired(true)
+          .addChoices(
+            {
+              name:
+                "عدم انصياع للأوامر — 10,000",
+              value:
+                "عدم انصياع للأوامر"
+            },
+            {
+              name:
+                "أشياء غير لائقة — 5,000",
+              value:
+                "أشياء غير لائقة"
+            },
+            {
+              name:
+                "التأخير عن مهمة — 5,000",
+              value:
+                "التأخير عن مهمة"
+            },
+            {
+              name:
+                "الغياب بدون إذن — 20,000",
+              value:
+                "الغياب بدون إذن"
+            },
+            {
+              name:
+                "مخالفة قوانين العصابة — 30,000",
+              value:
+                "مخالفة قوانين العصابة"
+            }
+          )
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -734,16 +1109,23 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("غراماتي")
-    .setDescription("عرض غراماتك"),
+    .setDescription(
+      "عرض غراماتك"
+    ),
 
   new SlashCommandBuilder()
     .setName("غرامات_العضو")
-    .setDescription("عرض غرامات عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "عرض غرامات عضو"
+    )
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -751,29 +1133,42 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("دفع_الغرامة")
-    .setDescription("دفع غرامة")
-    .addIntegerOption(option =>
-      option
-        .setName("رقم")
-        .setDescription("رقم الغرامة")
-        .setRequired(true)
-        .setMinValue(1)
+    .setDescription(
+      "دفع غرامة"
+    )
+    .addIntegerOption(
+      option =>
+        option
+          .setName("رقم")
+          .setDescription(
+            "رقم الغرامة"
+          )
+          .setRequired(true)
+          .setMinValue(1)
     ),
 
   new SlashCommandBuilder()
     .setName("تحذير")
-    .setDescription("إعطاء تحذير لعضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "إعطاء تحذير لعضو"
     )
-    .addStringOption(option =>
-      option
-        .setName("السبب")
-        .setDescription("سبب التحذير")
-        .setRequired(true)
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
+    )
+    .addStringOption(
+      option =>
+        option
+          .setName("السبب")
+          .setDescription(
+            "سبب التحذير"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -781,18 +1176,26 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("ترقية")
-    .setDescription("ترقية عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "ترقية عضو"
     )
-    .addRoleOption(option =>
-      option
-        .setName("الرتبة")
-        .setDescription("الرتبة الجديدة")
-        .setRequired(true)
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
+    )
+    .addRoleOption(
+      option =>
+        option
+          .setName("الرتبة")
+          .setDescription(
+            "الرتبة الجديدة"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -800,60 +1203,73 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("تنزيل")
-    .setDescription("تنزيل رتبة عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "تنزيل رتبة عضو"
     )
-    .addRoleOption(option =>
-      option
-        .setName("الرتبة")
-        .setDescription("الرتبة")
-        .setRequired(true)
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
+    )
+    .addRoleOption(
+      option =>
+        option
+          .setName("الرتبة")
+          .setDescription(
+            "الرتبة"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
     ),
-
-  // ===================================================
-  // إعطاء إجازة
-  // ===================================================
 
   new SlashCommandBuilder()
     .setName("اجازة")
-    .setDescription("إعطاء إجازة لعضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "إعطاء إجازة لعضو"
     )
-    .addIntegerOption(option =>
-      option
-        .setName("الأيام")
-        .setDescription("عدد أيام الإجازة")
-        .setRequired(true)
-        .setMinValue(1)
-        .setMaxValue(30)
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
+    )
+    .addIntegerOption(
+      option =>
+        option
+          .setName("الأيام")
+          .setDescription(
+            "عدد أيام الإجازة"
+          )
+          .setRequired(true)
+          .setMinValue(1)
+          .setMaxValue(30)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
     ),
 
-  // ===================================================
-  // إنهاء الإجازة قبل موعدها
-  // ===================================================
-
   new SlashCommandBuilder()
     .setName("انهاء_اجازة")
-    .setDescription("إنهاء إجازة عضو قبل موعدها")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(true)
+    .setDescription(
+      "إنهاء إجازة عضو قبل موعدها"
+    )
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -861,86 +1277,141 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("نقاط")
-    .setDescription("عرض نقاط عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(false)
+    .setDescription(
+      "عرض نقاط عضو"
+    )
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(false)
     ),
 
   new SlashCommandBuilder()
     .setName("ترتيب")
-    .setDescription("عرض ترتيب الأعضاء بالنقاط"),
+    .setDescription(
+      "عرض ترتيب الأعضاء بالنقاط"
+    ),
 
   new SlashCommandBuilder()
     .setName("احصائيات")
-    .setDescription("عرض إحصائيات عضو")
-    .addUserOption(option =>
-      option
-        .setName("العضو")
-        .setDescription("العضو")
-        .setRequired(false)
+    .setDescription(
+      "عرض إحصائيات عضو"
+    )
+    .addUserOption(
+      option =>
+        option
+          .setName("العضو")
+          .setDescription(
+            "العضو"
+          )
+          .setRequired(false)
     ),
 
   new SlashCommandBuilder()
     .setName("تقرير")
-    .setDescription("عرض التقرير العام")
+    .setDescription(
+      "عرض التقرير العام"
+    )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
     )
-].map(command => command.toJSON());
+].map(
+  command =>
+    command.toJSON()
+);
 
 // =====================================================
 // تشغيل البوت
 // =====================================================
 
-client.once("ready", async () => {
-  console.log(
-    "البوت شغال باسم " +
-    client.user.tag
-  );
+client.once(
+  "ready",
+  async () => {
 
-  const rest =
-    new REST({ version: "10" })
-      .setToken(process.env.TOKEN);
+    console.log(
+      "البوت شغال باسم " +
+      client.user.tag
+    );
 
-  try {
-    for (
-      const guild
-      of client.guilds.cache.values()
-    ) {
-      await rest.put(
-        Routes.applicationGuildCommands(
-          client.user.id,
-          guild.id
-        ),
-        {
-          body: commands
-        }
+    const TOKEN =
+      process.env.TOKEN?.trim();
+
+    if (!TOKEN) {
+      console.error(
+        "❌ TOKEN مش موجود في Environment Variables."
       );
-
-      console.log(
-        "تم تسجيل الأوامر في: " +
-        guild.name
-      );
-
-      await setupAttendancePanel(guild);
+      return;
     }
-  } catch (error) {
-    console.error(
-      "❌ خطأ في تسجيل الأوامر:",
-      error
+
+    const rest =
+      new REST({
+        version: "10"
+      }).setToken(TOKEN);
+
+    try {
+      for (
+        const guild
+        of client.guilds.cache.values()
+      ) {
+
+        await rest.put(
+          Routes.applicationGuildCommands(
+            client.user.id,
+            guild.id
+          ),
+          {
+            body: commands
+          }
+        );
+
+        console.log(
+          "تم تسجيل الأوامر في: " +
+          guild.name
+        );
+
+        await setupAttendancePanel(
+          guild
+        );
+      }
+
+    } catch (error) {
+      console.error(
+        "❌ خطأ في تسجيل الأوامر:",
+        error
+      );
+    }
+
+    await dailyCheck();
+
+    setInterval(
+      dailyCheck,
+      60 * 60 * 1000
+    );
+
+    // تحديث لوحة الحضور كل دقيقة
+    setInterval(
+      async () => {
+        const data =
+          loadData();
+
+        for (
+          const guild
+          of client.guilds.cache.values()
+        ) {
+          await updateAttendancePanel(
+            guild,
+            data
+          );
+        }
+      },
+      60 * 1000
     );
   }
-
-  await dailyCheck();
-
-  setInterval(
-    dailyCheck,
-    60 * 60 * 1000
-  );
-});
+);
 
 // =====================================================
 // التفاعلات
@@ -963,13 +1434,16 @@ client.on(
           "attendance_check_out"
       )
     ) {
+
       const data =
         loadData();
 
       const user =
         interaction.user;
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 أنت مستثنى بالكامل من نظام البوت.",
@@ -986,13 +1460,18 @@ client.on(
       const today =
         egyptDate();
 
+      // =================================================
       // تسجيل حضور
+      // =================================================
+
       if (
         interaction.customId ===
         "attendance_check_in"
       ) {
 
-        if (player.presentToday) {
+        if (
+          player.presentToday
+        ) {
           return interaction.reply({
             content:
               "⚠️ أنت مسجل حضور بالفعل.",
@@ -1000,13 +1479,23 @@ client.on(
           });
         }
 
-        player.presentToday = true;
-        player.lastAttendance = today;
+        player.presentToday =
+          true;
+
+        player.lastAttendance =
+          today;
+
+        player.attendanceStartedAt =
+          new Date().toISOString();
 
         if (
-          !player.attendance.includes(today)
+          !player.attendance.includes(
+            today
+          )
         ) {
-          player.attendance.push(today);
+          player.attendance.push(
+            today
+          );
         }
 
         player.points += 1;
@@ -1022,18 +1511,24 @@ client.on(
           content:
             `🟢 **تم تسجيل حضورك بنجاح!**\n` +
             `📅 التاريخ: **${today}**\n` +
+            `⏱️ بدأ حساب وقت اللعب من دلوقتي.\n` +
             `⭐ +1 نقطة`,
           ephemeral: true
         });
       }
 
+      // =================================================
       // تسجيل انصراف
+      // =================================================
+
       if (
         interaction.customId ===
         "attendance_check_out"
       ) {
 
-        if (!player.presentToday) {
+        if (
+          !player.presentToday
+        ) {
           return interaction.reply({
             content:
               "⚠️ أنت مش مسجل حضور حاليًا.",
@@ -1041,7 +1536,11 @@ client.on(
           });
         }
 
-        player.presentToday = false;
+        const playedSeconds =
+          closeAttendanceSession(
+            player,
+            today
+          );
 
         saveData(data);
 
@@ -1052,7 +1551,9 @@ client.on(
 
         return interaction.reply({
           content:
-            "🔴 **تم تسجيل انصرافك بنجاح.**",
+            `🔴 **تم تسجيل انصرافك بنجاح.**\n\n` +
+            `⏱️ وقت لعبك في الجلسة: **${formatPlayTime(playedSeconds)}**\n` +
+            `📊 إجمالي وقت لعبك اليوم: **${formatPlayTime(getCurrentDailyPlayTime(player, today))}**`,
           ephemeral: true
         });
       }
@@ -1060,8 +1561,11 @@ client.on(
       return;
     }
 
-    if (!interaction.isChatInputCommand())
+    if (
+      !interaction.isChatInputCommand()
+    ) {
       return;
+    }
 
     const command =
       interaction.commandName;
@@ -1073,10 +1577,14 @@ client.on(
     // حضوراتي
     // =================================================
 
-    if (command === "حضوراتي") {
+    if (
+      command === "حضوراتي"
+    ) {
 
       if (
-        isFullyExcluded(interaction.user.id)
+        isFullyExcluded(
+          interaction.user.id
+        )
       ) {
         return interaction.reply({
           content:
@@ -1086,7 +1594,9 @@ client.on(
       }
 
       const player =
-        data[interaction.user.id];
+        data[
+          interaction.user.id
+        ];
 
       if (
         !player ||
@@ -1103,15 +1613,21 @@ client.on(
       const list =
         player.attendance
           .slice(-14)
-          .map(date => `📅 ${date}`)
+          .map(
+            date =>
+              `📅 ${date}`
+          )
           .join("\n");
 
       const embed =
         new EmbedBuilder()
-          .setTitle("📋 سجل حضورك")
+          .setTitle(
+            "📋 سجل حضورك"
+          )
           .setDescription(list)
           .addFields({
-            name: "إجمالي أيام الحضور",
+            name:
+              "إجمالي أيام الحضور",
             value:
               `${player.attendance.length}`,
             inline: true
@@ -1128,9 +1644,13 @@ client.on(
     // الغيابات
     // =================================================
 
-    if (command === "الغيابات") {
+    if (
+      command === "الغيابات"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1148,11 +1668,13 @@ client.on(
         of members.values()
       ) {
 
-        if (member.user.bot)
-          continue;
+        if (
+          member.user.bot
+        ) continue;
 
-        if (isFullyExcluded(member))
-          continue;
+        if (
+          isFullyExcluded(member)
+        ) continue;
 
         const player =
           data[member.id];
@@ -1160,14 +1682,18 @@ client.on(
         if (!player)
           continue;
 
-        if (!player.presentToday) {
+        if (
+          !player.presentToday
+        ) {
           absent.push(
             `<@${member.id}>`
           );
         }
       }
 
-      if (absent.length === 0) {
+      if (
+        absent.length === 0
+      ) {
         return interaction.reply(
           "✅ مفيش أعضاء غائبين."
         );
@@ -1183,9 +1709,13 @@ client.on(
     // تاسك
     // =================================================
 
-    if (command === "تاسك") {
+    if (
+      command === "تاسك"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1209,10 +1739,13 @@ client.on(
         of members.values()
       ) {
 
-        if (member.user.bot)
-          continue;
+        if (
+          member.user.bot
+        ) continue;
 
-        if (isTaskExcluded(member)) {
+        if (
+          isTaskExcluded(member)
+        ) {
           excluded++;
           continue;
         }
@@ -1253,9 +1786,13 @@ client.on(
     // تسليم
     // =================================================
 
-    if (command === "تسليم") {
+    if (
+      command === "تسليم"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1283,7 +1820,9 @@ client.on(
         });
       }
 
-      if (isFullyExcluded(member)) {
+      if (
+        isFullyExcluded(member)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -1291,7 +1830,9 @@ client.on(
         });
       }
 
-      if (isTaskExcluded(member)) {
+      if (
+        isTaskExcluded(member)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى من نظام التاسكات.",
@@ -1307,7 +1848,8 @@ client.on(
 
       const task =
         player.tasks.find(
-          task => !task.submitted
+          task =>
+            !task.submitted
         );
 
       if (!task) {
@@ -1341,7 +1883,9 @@ client.on(
     // تاسكاتي
     // =================================================
 
-    if (command === "تاسكاتي") {
+    if (
+      command === "تاسكاتي"
+    ) {
 
       if (
         isFullyExcluded(
@@ -1376,7 +1920,9 @@ client.on(
       }
 
       const player =
-        data[interaction.user.id];
+        data[
+          interaction.user.id
+        ];
 
       if (
         !player ||
@@ -1393,16 +1939,19 @@ client.on(
       const list =
         player.tasks
           .slice(-10)
-          .map(task =>
-            `${task.submitted ? "✅" : "❌"} ` +
-            `**#${task.id}** — ${task.text}\n` +
-            `📅 ${task.date}`
+          .map(
+            task =>
+              `${task.submitted ? "✅" : "❌"} ` +
+              `**#${task.id}** — ${task.text}\n` +
+              `📅 ${task.date}`
           )
           .join("\n\n");
 
       const embed =
         new EmbedBuilder()
-          .setTitle("📋 تاسكاتك")
+          .setTitle(
+            "📋 تاسكاتك"
+          )
           .setDescription(list)
           .setTimestamp();
 
@@ -1416,9 +1965,13 @@ client.on(
     // كل التاسكات
     // =================================================
 
-    if (command === "التاسكات") {
+    if (
+      command === "التاسكات"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1433,11 +1986,13 @@ client.on(
         of Object.entries(data)
       ) {
 
-        if (isFullyExcluded(id))
-          continue;
+        if (
+          isFullyExcluded(id)
+        ) continue;
 
-        if (!player.tasks)
-          continue;
+        if (
+          !player.tasks
+        ) continue;
 
         let member;
 
@@ -1450,16 +2005,19 @@ client.on(
           continue;
         }
 
-        if (isTaskExcluded(member))
-          continue;
+        if (
+          isTaskExcluded(member)
+        ) continue;
 
         const pending =
           player.tasks.filter(
-            task => !task.submitted
+            task =>
+              !task.submitted
           );
 
-        if (pending.length === 0)
-          continue;
+        if (
+          pending.length === 0
+        ) continue;
 
         text +=
           `👤 <@${id}>\n` +
@@ -1495,9 +2053,13 @@ client.on(
     // غرامة
     // =================================================
 
-    if (command === "غرامة") {
+    if (
+      command === "غرامة"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1510,7 +2072,9 @@ client.on(
           "العضو"
         );
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت، ومينفعش تتحط عليه غرامة.",
@@ -1589,6 +2153,7 @@ client.on(
             fineRole
           );
         }
+
       } catch (error) {
         console.log(
           "⚠️ لم أستطع إضافة رول الغرامة:",
@@ -1610,7 +2175,9 @@ client.on(
     // غراماتي
     // =================================================
 
-    if (command === "غراماتي") {
+    if (
+      command === "غراماتي"
+    ) {
 
       if (
         isFullyExcluded(
@@ -1625,7 +2192,9 @@ client.on(
       }
 
       const player =
-        data[interaction.user.id];
+        data[
+          interaction.user.id
+        ];
 
       if (
         !player ||
@@ -1645,53 +2214,55 @@ client.on(
       const list =
         player.fines
           .slice(-10)
-          .map((fine, index) => {
+          .map(
+            (fine, index) => {
 
-            const id =
-              fine.id ||
-              index + 1;
+              const id =
+                fine.id ||
+                index + 1;
 
-            let status;
+              let status;
 
-            if (
-              fine.paid === true
-            ) {
-              status =
-                "✅ مدفوعة";
-            } else if (
-              fine.deadline &&
-              now >= fine.deadline
-            ) {
-              status =
-                "🔴 متأخرة";
-            } else if (
-              fine.deadline
-            ) {
-              const remaining =
-                fine.deadline -
-                now;
+              if (
+                fine.paid === true
+              ) {
+                status =
+                  "✅ مدفوعة";
+              } else if (
+                fine.deadline &&
+                now >= fine.deadline
+              ) {
+                status =
+                  "🔴 متأخرة";
+              } else if (
+                fine.deadline
+              ) {
+                const remaining =
+                  fine.deadline -
+                  now;
 
-              const hours =
-                Math.ceil(
-                  remaining /
-                  3600000
-                );
+                const hours =
+                  Math.ceil(
+                    remaining /
+                    3600000
+                  );
 
-              status =
-                `⏳ باقي ${hours} ساعة`;
-            } else {
-              status =
-                "⏳ غير مدفوعة";
+                status =
+                  `⏳ باقي ${hours} ساعة`;
+              } else {
+                status =
+                  "⏳ غير مدفوعة";
+              }
+
+              return (
+                `🆔 **#${id}**\n` +
+                `💰 **${fine.amount.toLocaleString()} جنيه**\n` +
+                `📝 ${fine.reason}\n` +
+                `📅 ${fine.date}\n` +
+                `📌 ${status}`
+              );
             }
-
-            return (
-              `🆔 **#${id}**\n` +
-              `💰 **${fine.amount.toLocaleString()} جنيه**\n` +
-              `📝 ${fine.reason}\n` +
-              `📅 ${fine.date}\n` +
-              `📌 ${status}`
-            );
-          })
+          )
           .join("\n\n");
 
       const unpaid =
@@ -1709,7 +2280,9 @@ client.on(
 
       const embed =
         new EmbedBuilder()
-          .setTitle("💰 غراماتك")
+          .setTitle(
+            "💰 غراماتك"
+          )
           .setDescription(list)
           .addFields({
             name:
@@ -1755,7 +2328,9 @@ client.on(
         );
 
       const player =
-        data[interaction.user.id];
+        data[
+          interaction.user.id
+        ];
 
       if (
         !player ||
@@ -1791,6 +2366,7 @@ client.on(
       }
 
       fine.paid = true;
+
       fine.paidAt =
         Date.now();
 
@@ -1804,7 +2380,9 @@ client.on(
 
         const fineRole =
           fine.role ||
-          FINE_ROLES[fine.reason];
+          FINE_ROLES[
+            fine.reason
+          ];
 
         const hasAnotherFine =
           player.fines.some(
@@ -1813,7 +2391,9 @@ client.on(
               f.paid !== true &&
               (
                 f.role ||
-                FINE_ROLES[f.reason]
+                FINE_ROLES[
+                  f.reason
+                ]
               ) === fineRole
           );
 
@@ -1828,6 +2408,7 @@ client.on(
             fineRole
           );
         }
+
       } catch (error) {
         console.log(
           "⚠️ لم أستطع إزالة رول الغرامة:",
@@ -1851,7 +2432,9 @@ client.on(
       command === "غرامات_العضو"
     ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1894,37 +2477,39 @@ client.on(
 
       const list =
         player.fines
-          .map((fine, index) => {
+          .map(
+            (fine, index) => {
 
-            const id =
-              fine.id ||
-              index + 1;
+              const id =
+                fine.id ||
+                index + 1;
 
-            let status;
+              let status;
 
-            if (
-              fine.paid === true
-            ) {
-              status =
-                "✅ مدفوعة";
-            } else if (
-              fine.deadline &&
-              now >= fine.deadline
-            ) {
-              status =
-                "🔴 متأخرة";
-            } else {
-              status =
-                "⏳ غير مدفوعة";
+              if (
+                fine.paid === true
+              ) {
+                status =
+                  "✅ مدفوعة";
+              } else if (
+                fine.deadline &&
+                now >= fine.deadline
+              ) {
+                status =
+                  "🔴 متأخرة";
+              } else {
+                status =
+                  "⏳ غير مدفوعة";
+              }
+
+              return (
+                `🆔 #${id} — ` +
+                `💰 ${fine.amount.toLocaleString()} جنيه\n` +
+                `📝 ${fine.reason}\n` +
+                `📅 ${fine.date} — ${status}`
+              );
             }
-
-            return (
-              `🆔 #${id} — ` +
-              `💰 ${fine.amount.toLocaleString()} جنيه\n` +
-              `📝 ${fine.reason}\n` +
-              `📅 ${fine.date} — ${status}`
-            );
-          })
+          )
           .join("\n\n");
 
       return interaction.reply(
@@ -1938,9 +2523,13 @@ client.on(
     // تحذير يدوي
     // =================================================
 
-    if (command === "تحذير") {
+    if (
+      command === "تحذير"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -1953,7 +2542,9 @@ client.on(
           "العضو"
         );
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت، ومينفعش ياخد Warn.",
@@ -1993,9 +2584,13 @@ client.on(
     // ترقية
     // =================================================
 
-    if (command === "ترقية") {
+    if (
+      command === "ترقية"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2008,7 +2603,9 @@ client.on(
           "العضو"
         );
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2047,9 +2644,13 @@ client.on(
     // تنزيل
     // =================================================
 
-    if (command === "تنزيل") {
+    if (
+      command === "تنزيل"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2062,7 +2663,9 @@ client.on(
           "العضو"
         );
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2101,9 +2704,13 @@ client.on(
     // إجازة
     // =================================================
 
-    if (command === "اجازة") {
+    if (
+      command === "اجازة"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2116,7 +2723,9 @@ client.on(
           "العضو"
         );
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2145,9 +2754,14 @@ client.on(
         );
 
       player.vacations.push({
-        start: egyptDate(start),
-        end: egyptDate(end),
-        days
+        start:
+          egyptDate(start),
+        end:
+          egyptDate(end),
+        days,
+        ended: false,
+        endedAt: null,
+        endedBy: null
       });
 
       saveData(data);
@@ -2163,9 +2777,13 @@ client.on(
     // إنهاء الإجازة قبل موعدها
     // =================================================
 
-    if (command === "انهاء_اجازة") {
+    if (
+      command === "انهاء_اجازة"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2178,7 +2796,9 @@ client.on(
           "العضو"
         );
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2209,44 +2829,65 @@ client.on(
           `${today}T00:00:00+03:00`
         );
 
-      // البحث عن الإجازة الحالية فقط
-      const vacationIndex =
-        player.vacations.findIndex(
-          vacation => {
+      let vacationIndex = -1;
 
-            const start =
-              new Date(
-                `${vacation.start}T00:00:00+03:00`
-              );
+      // الإجازة الحالية أو القادمة
+      for (
+        let i =
+          player.vacations.length - 1;
+        i >= 0;
+        i--
+      ) {
+        const vacation =
+          player.vacations[i];
 
-            const end =
-              new Date(
-                `${vacation.end}T00:00:00+03:00`
-              );
+        if (
+          vacation.ended === true
+        ) {
+          continue;
+        }
 
-            return (
-              current >= start &&
-              current <= end
-            );
-          }
-        );
+        const start =
+          new Date(
+            `${vacation.start}T00:00:00+03:00`
+          );
 
-      if (vacationIndex === -1) {
+        const end =
+          new Date(
+            `${vacation.end}T00:00:00+03:00`
+          );
+
+        if (
+          current <= end
+        ) {
+          vacationIndex = i;
+          break;
+        }
+      }
+
+      if (
+        vacationIndex === -1
+      ) {
         return interaction.reply({
           content:
-            `❌ ${user} مش في إجازة حاليًا.`,
+            `❌ ${user} مفيش إجازة حالية أو قادمة يمكن إنهاؤها.`,
           ephemeral: true
         });
       }
 
       const vacation =
-        player.vacations[vacationIndex];
+        player.vacations[
+          vacationIndex
+        ];
 
-      // حذف الإجازة الحالية فقط
-      player.vacations.splice(
-        vacationIndex,
-        1
-      );
+      vacation.ended =
+        true;
+
+      vacation.endedAt =
+        new Date().toISOString();
+
+      vacation.endedBy =
+        interaction.user.id;
 
       saveData(data);
 
@@ -2254,7 +2895,7 @@ client.on(
         `✅ **تم إنهاء إجازة ${user} بنجاح.**\n\n` +
         `📅 بداية الإجازة: **${vacation.start}**\n` +
         `📅 كانت هتنتهي: **${vacation.end}**\n` +
-        `🛑 تم إنهاؤها قبل موعدها بواسطة: ${interaction.user}`
+        `🛑 تم إنهاؤها بواسطة: ${interaction.user}`
       );
     }
 
@@ -2262,7 +2903,9 @@ client.on(
     // نقاط
     // =================================================
 
-    if (command === "نقاط") {
+    if (
+      command === "نقاط"
+    ) {
 
       const user =
         interaction.options.getUser(
@@ -2270,7 +2913,9 @@ client.on(
         ) ||
         interaction.user;
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2283,19 +2928,73 @@ client.on(
 
       const points =
         player
-          ? player.points
+          ? player.points || 0
           : 0;
 
-      return interaction.reply(
-        `⭐ نقاط ${user}: **${points}**`
-      );
+      const today =
+        egyptDate();
+
+      const todayTime =
+        player
+          ? getCurrentDailyPlayTime(
+              player,
+              today
+            )
+          : 0;
+
+      const totalTime =
+        player
+          ? getTotalPlayTime(
+              player
+            )
+          : 0;
+
+      const embed =
+        new EmbedBuilder()
+          .setTitle(
+            `⭐ نقاط ${user.username}`
+          )
+          .addFields(
+            {
+              name:
+                "⭐ النقاط",
+              value:
+                `${points}`,
+              inline: true
+            },
+            {
+              name:
+                "⏱️ وقت اللعب اليوم",
+              value:
+                formatPlayTime(
+                  todayTime
+                ),
+              inline: true
+            },
+            {
+              name:
+                "🕐 إجمالي وقت اللعب",
+              value:
+                formatPlayTime(
+                  totalTime
+                ),
+              inline: true
+            }
+          )
+          .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed]
+      });
     }
 
     // =================================================
     // ترتيب
     // =================================================
 
-    if (command === "ترتيب") {
+    if (
+      command === "ترتيب"
+    ) {
 
       const players =
         Object.entries(data)
@@ -2304,12 +3003,50 @@ client.on(
               !isFullyExcluded(id)
           )
           .sort(
-            (a, b) =>
-              (b[1].points || 0) -
-              (a[1].points || 0)
+            (a, b) => {
+
+              const pointsA =
+                Number(
+                  a[1].points || 0
+                );
+
+              const pointsB =
+                Number(
+                  b[1].points || 0
+                );
+
+              // الأولوية للنقاط
+              if (
+                pointsB !== pointsA
+              ) {
+                return (
+                  pointsB -
+                  pointsA
+                );
+              }
+
+              // لو النقاط متساوية
+              // الأولوية لوقت اللعب
+              const timeA =
+                getTotalPlayTime(
+                  a[1]
+                );
+
+              const timeB =
+                getTotalPlayTime(
+                  b[1]
+                );
+
+              return (
+                timeB -
+                timeA
+              );
+            }
           );
 
-      if (players.length === 0) {
+      if (
+        players.length === 0
+      ) {
         return interaction.reply(
           "📊 مفيش بيانات لسه."
         );
@@ -2319,17 +3056,34 @@ client.on(
         players
           .slice(0, 10)
           .map(
-            ([id, player], index) =>
-              `${index + 1}. <@${id}> — ⭐ ${player.points || 0}`
+            ([id, player], index) => {
+
+              const time =
+                getTotalPlayTime(
+                  player
+                );
+
+              return (
+                `${index + 1}. <@${id}> — ` +
+                `⭐ **${player.points || 0}** ` +
+                `⏱️ **${formatPlayTime(time)}**`
+              );
+            }
           )
           .join("\n");
 
       const embed =
         new EmbedBuilder()
           .setTitle(
-            "🏆 ترتيب النقاط"
+            "🏆 ترتيب الأعضاء"
           )
-          .setDescription(text)
+          .setDescription(
+            text
+          )
+          .setFooter({
+            text:
+              "الترتيب بالنقاط أولًا، وعند التعادل وقت اللعب الأعلى"
+          })
           .setTimestamp();
 
       return interaction.reply({
@@ -2341,7 +3095,9 @@ client.on(
     // الإحصائيات
     // =================================================
 
-    if (command === "احصائيات") {
+    if (
+      command === "احصائيات"
+    ) {
 
       const user =
         interaction.options.getUser(
@@ -2349,7 +3105,9 @@ client.on(
         ) ||
         interaction.user;
 
-      if (isFullyExcluded(user.id)) {
+      if (
+        isFullyExcluded(user.id)
+      ) {
         return interaction.reply({
           content:
             "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
@@ -2394,6 +3152,20 @@ client.on(
             0
           );
 
+      const today =
+        egyptDate();
+
+      const todayPlayTime =
+        getCurrentDailyPlayTime(
+          player,
+          today
+        );
+
+      const totalPlayTime =
+        getTotalPlayTime(
+          player
+        );
+
       const embed =
         new EmbedBuilder()
           .setTitle(
@@ -2401,9 +3173,28 @@ client.on(
           )
           .addFields(
             {
-              name: "👥 الحضور",
+              name:
+                "👥 الحضور",
               value:
                 `${player.attendance.length} يوم`,
+              inline: true
+            },
+            {
+              name:
+                "⏱️ وقت اللعب اليوم",
+              value:
+                formatPlayTime(
+                  todayPlayTime
+                ),
+              inline: true
+            },
+            {
+              name:
+                "🕐 إجمالي وقت اللعب",
+              value:
+                formatPlayTime(
+                  totalPlayTime
+                ),
               inline: true
             },
             {
@@ -2442,7 +3233,8 @@ client.on(
               inline: true
             },
             {
-              name: "⭐ النقاط",
+              name:
+                "⭐ النقاط",
               value:
                 `${player.points}`,
               inline: true
@@ -2459,9 +3251,13 @@ client.on(
     // التقرير
     // =================================================
 
-    if (command === "تقرير") {
+    if (
+      command === "تقرير"
+    ) {
 
-      if (!isAdmin(interaction)) {
+      if (
+        !isAdmin(interaction)
+      ) {
         return interaction.reply({
           content:
             "❌ الأمر ده للإدارة فقط.",
@@ -2480,10 +3276,13 @@ client.on(
         of Object.entries(data)
       ) {
 
-        if (isFullyExcluded(userId))
-          continue;
+        if (
+          isFullyExcluded(userId)
+        ) continue;
 
-        if (player.presentToday) {
+        if (
+          player.presentToday
+        ) {
           attendance++;
         }
 
@@ -2493,20 +3292,25 @@ client.on(
               userId
             );
 
-          if (!isTaskExcluded(member)) {
+          if (
+            !isTaskExcluded(member)
+          ) {
 
             for (
               const task
               of player.tasks || []
             ) {
 
-              if (task.submitted) {
+              if (
+                task.submitted
+              ) {
                 tasks++;
               } else {
                 pending++;
               }
             }
           }
+
         } catch {}
 
         for (
@@ -2514,8 +3318,11 @@ client.on(
           of player.fines || []
         ) {
 
-          if (fine.paid !== true) {
-            fines += fine.amount;
+          if (
+            fine.paid !== true
+          ) {
+            fines +=
+              fine.amount;
           }
         }
 
@@ -2592,6 +3399,95 @@ async function dailyCheck() {
   const currentEgyptHour =
     egyptHour(now);
 
+  // ===================================================
+  // التعامل مع الجلسات المفتوحة
+  // ===================================================
+
+  for (
+    const [userId, player]
+    of Object.entries(data)
+  ) {
+
+    if (
+      isFullyExcluded(userId)
+    ) continue;
+
+    if (
+      !player.presentToday ||
+      !player.attendanceStartedAt
+    ) {
+      continue;
+    }
+
+    const startedDate =
+      egyptDate(
+        new Date(
+          player.attendanceStartedAt
+        )
+      );
+
+    // لو الجلسة بدأت في يوم قديم
+    // نقفلها عند تغيير اليوم
+    if (
+      startedDate !== today
+    ) {
+
+      const startedTime =
+        new Date(
+          player.attendanceStartedAt
+        ).getTime();
+
+      const midnight =
+        new Date(
+          `${today}T00:00:00+03:00`
+        ).getTime();
+
+      if (
+        !Number.isNaN(
+          startedTime
+        )
+      ) {
+
+        const seconds =
+          Math.max(
+            0,
+            Math.floor(
+              (
+                midnight -
+                startedTime
+              ) / 1000
+            )
+          );
+
+        addPlayTime(
+          player,
+          startedDate,
+          seconds
+        );
+      }
+
+      // يبدأ جلسة جديدة لليوم الجديد
+      player.attendanceStartedAt =
+        new Date().toISOString();
+
+      player.presentToday =
+        true;
+
+      player.lastAttendance =
+        today;
+
+      if (
+        !player.attendance.includes(
+          today
+        )
+      ) {
+        player.attendance.push(
+          today
+        );
+      }
+    }
+  }
+
   for (
     const guild
     of client.guilds.cache.values()
@@ -2611,11 +3507,13 @@ async function dailyCheck() {
       of members.values()
     ) {
 
-      if (member.user.bot)
-        continue;
+      if (
+        member.user.bot
+      ) continue;
 
-      if (isFullyExcluded(member))
-        continue;
+      if (
+        isFullyExcluded(member)
+      ) continue;
 
       const player =
         data[member.id];
@@ -2633,6 +3531,13 @@ async function dailyCheck() {
         const vacation
         of player.vacations || []
       ) {
+
+        // الإجازة المنتهية يدويًا لا تتحسب
+        if (
+          vacation.ended === true
+        ) {
+          continue;
+        }
 
         const current =
           new Date(
@@ -2658,8 +3563,9 @@ async function dailyCheck() {
         }
       }
 
-      if (onVacation)
-        continue;
+      if (
+        onVacation
+      ) continue;
 
       // =================================================
       // الغياب
@@ -2676,7 +3582,9 @@ async function dailyCheck() {
             today
           );
 
-        if (difference >= 2) {
+        if (
+          difference >= 2
+        ) {
 
           await addWarn(
             guild,
@@ -2695,14 +3603,17 @@ async function dailyCheck() {
       // استثناء التاسكات
       // =================================================
 
-      if (isTaskExcluded(member))
-        continue;
+      if (
+        isTaskExcluded(member)
+      ) continue;
 
       // =================================================
       // التاسكات + مهلة 4 ساعات
       // =================================================
 
-      if (currentEgyptHour >= 4) {
+      if (
+        currentEgyptHour >= 4
+      ) {
 
         for (
           const task
@@ -2716,9 +3627,12 @@ async function dailyCheck() {
             continue;
           }
 
-          if (task.date !== today) {
+          if (
+            task.date !== today
+          ) {
 
-            task.warned = true;
+            task.warned =
+              true;
 
             await addWarn(
               guild,
@@ -2734,42 +3648,59 @@ async function dailyCheck() {
   }
 
   // ===================================================
-  // تصفير حضور اليوم
+  // تحديث بيانات الوقت اليومية
   // ===================================================
-
-  let attendanceWasReset = false;
 
   for (
     const [userId, player]
     of Object.entries(data)
   ) {
 
-    if (isFullyExcluded(userId))
-      continue;
+    if (
+      isFullyExcluded(userId)
+    ) continue;
 
-    if (player.lastReset !== today) {
+    const todayTime =
+      getCurrentDailyPlayTime(
+        player,
+        today
+      );
 
-      player.presentToday = false;
-      player.lastReset = today;
+    player.dailyPlayTimeDate =
+      today;
 
-      attendanceWasReset = true;
+    player.dailyPlayTimeSeconds =
+      getSavedDailyPlayTime(
+        player,
+        today
+      );
+
+    // لو العضو موجود حاليًا، ما نضيفش الوقت
+    // للإجمالي هنا لأن الجلسة لسه مفتوحة.
+    // الوقت بيتحسب مباشرة عند الانصراف.
+    if (
+      !player.presentToday
+    ) {
+      player.dailyPlayTimeSeconds =
+        todayTime;
     }
   }
 
   saveData(data);
 
-  if (attendanceWasReset) {
+  // ===================================================
+  // تحديث لوحة الحضور
+  // ===================================================
 
-    for (
-      const guild
-      of client.guilds.cache.values()
-    ) {
+  for (
+    const guild
+    of client.guilds.cache.values()
+  ) {
 
-      await updateAttendancePanel(
-        guild,
-        data
-      );
-    }
+    await updateAttendancePanel(
+      guild,
+      data
+    );
   }
 
   console.log(
@@ -2781,6 +3712,32 @@ async function dailyCheck() {
 // تشغيل البوت
 // =====================================================
 
-client.login(
-  process.env.TOKEN
-);
+const TOKEN =
+  process.env.TOKEN?.trim();
+
+if (!TOKEN) {
+  console.error(
+    "❌ TOKEN مش موجود في Environment Variables."
+  );
+} else {
+  client.login(TOKEN).catch(
+    error => {
+      console.error(
+        "❌ فشل تسجيل دخول البوت."
+      );
+
+      if (
+        error?.code ===
+        "TokenInvalid"
+      ) {
+        console.error(
+          "❌ الـ TOKEN غير صحيح. حط Bot Token الصحيح في TOKEN داخل Environment Variables."
+        );
+      } else {
+        console.error(
+          error
+        );
+      }
+    }
+  );
+}
