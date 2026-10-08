@@ -335,11 +335,6 @@ async function updateAttendancePanel(guild, data = null) {
       const membersList = [];
 
       for (const userId of presentUsers) {
-        /*
-         * مهم:
-         * المنشن هنا مكتوب بالطريقة الصحيحة
-         * عشان Discord يعرض اسم العضو بدل الـID.
-         */
         membersList.push(
           `🟢 <@${userId}>`
         );
@@ -822,6 +817,10 @@ const commands = [
       PermissionFlagsBits.ManageGuild
     ),
 
+  // ===================================================
+  // إعطاء إجازة
+  // ===================================================
+
   new SlashCommandBuilder()
     .setName("اجازة")
     .setDescription("إعطاء إجازة لعضو")
@@ -838,6 +837,23 @@ const commands = [
         .setRequired(true)
         .setMinValue(1)
         .setMaxValue(30)
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageGuild
+    ),
+
+  // ===================================================
+  // إنهاء الإجازة قبل موعدها
+  // ===================================================
+
+  new SlashCommandBuilder()
+    .setName("انهاء_اجازة")
+    .setDescription("إنهاء إجازة عضو قبل موعدها")
+    .addUserOption(option =>
+      option
+        .setName("العضو")
+        .setDescription("العضو")
+        .setRequired(true)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild
@@ -2140,6 +2156,105 @@ client.on(
         `🌴 تم إعطاء ${user} إجازة لمدة **${days} يوم**.\n` +
         `📅 من: **${egyptDate(start)}**\n` +
         `📅 إلى: **${egyptDate(end)}**`
+      );
+    }
+
+    // =================================================
+    // إنهاء الإجازة قبل موعدها
+    // =================================================
+
+    if (command === "انهاء_اجازة") {
+
+      if (!isAdmin(interaction)) {
+        return interaction.reply({
+          content:
+            "❌ الأمر ده للإدارة فقط.",
+          ephemeral: true
+        });
+      }
+
+      const user =
+        interaction.options.getUser(
+          "العضو"
+        );
+
+      if (isFullyExcluded(user.id)) {
+        return interaction.reply({
+          content:
+            "🚫 العضو ده مستثنى بالكامل من نظام البوت.",
+          ephemeral: true
+        });
+      }
+
+      const player =
+        data[user.id];
+
+      if (
+        !player ||
+        !player.vacations ||
+        player.vacations.length === 0
+      ) {
+        return interaction.reply({
+          content:
+            `❌ ${user} مفيش له إجازة مسجلة.`,
+          ephemeral: true
+        });
+      }
+
+      const today =
+        egyptDate();
+
+      const current =
+        new Date(
+          `${today}T00:00:00+03:00`
+        );
+
+      // البحث عن الإجازة الحالية فقط
+      const vacationIndex =
+        player.vacations.findIndex(
+          vacation => {
+
+            const start =
+              new Date(
+                `${vacation.start}T00:00:00+03:00`
+              );
+
+            const end =
+              new Date(
+                `${vacation.end}T00:00:00+03:00`
+              );
+
+            return (
+              current >= start &&
+              current <= end
+            );
+          }
+        );
+
+      if (vacationIndex === -1) {
+        return interaction.reply({
+          content:
+            `❌ ${user} مش في إجازة حاليًا.`,
+          ephemeral: true
+        });
+      }
+
+      const vacation =
+        player.vacations[vacationIndex];
+
+      // حذف الإجازة الحالية فقط
+      player.vacations.splice(
+        vacationIndex,
+        1
+      );
+
+      saveData(data);
+
+      return interaction.reply(
+        `✅ **تم إنهاء إجازة ${user} بنجاح.**\n\n` +
+        `📅 بداية الإجازة: **${vacation.start}**\n` +
+        `📅 كانت هتنتهي: **${vacation.end}**\n` +
+        `🛑 تم إنهاؤها قبل موعدها بواسطة: ${interaction.user}`
       );
     }
 
