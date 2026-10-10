@@ -25,7 +25,7 @@ const client = new Client({
 // الإعدادات
 // =====================================================
 
-const WARN_CHANNEL_ID = "1551005345382404147";
+const WARN_CHANNEL_ID = "1558225197117743238";
 const ATTENDANCE_CHANNEL_ID = "1556509433289244702";
 
 const TASK_WARN_ROLES = [
